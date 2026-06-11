@@ -1,0 +1,9 @@
+pandas
+openpyxl
+beautifulsoup4
+lxml
+html5lib
+pypdf
+pdfplumber
+tushare
+futu-api

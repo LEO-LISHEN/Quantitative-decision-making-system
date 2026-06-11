@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quantitative Decision System</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="Quantitative Decision System">
+        <span class="brand-mark"></span>
+        <span>QDS</span>
+      </a>
+      <nav class="nav" aria-label="主导航">
+        <a class="nav-link active" href="#analysis">AI 估值分析</a>
+        <a class="nav-link muted" href="#position">仓位测算</a>
+        <a class="nav-link muted" href="#events">事件聚焦</a>
+        <a class="nav-link muted" href="#portfolio">组合决策</a>
+        <a class="nav-link muted" href="#settings">系统设置</a>
+      </nav>
+    </header>
+
+    <main class="shell">
+      <section class="page-view" id="analysis" data-page="analysis">
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="eyebrow">Equity Research Workbench</p>
+            <h1>把股票问题转成可审阅的估值判断。</h1>
+            <p class="lead">
+              输入研究对象和关注点，系统会调用多分析师工作流，生成结构化结论、估值报告和证据线索。
+            </p>
+          </div>
+          <aside class="status-card">
+            <span class="status-dot"></span>
+            <div>
+              <strong>Financial Analyst Skills</strong>
+              <p>当前核心分析引擎已加载，后续模块可从顶部导航接入。</p>
+            </div>
+          </aside>
+        </section>
+
+        <section class="workspace">
+        <form id="analysisForm" class="panel input-panel">
+          <div class="panel-head">
+            <div>
+              <p class="kicker">Research Request</p>
+              <h2>创建分析任务</h2>
+            </div>
+            <div class="form-actions">
+              <button class="ghost" type="button" id="sampleBtn">填入示例</button>
+              <button class="ghost dev-preview" type="button" id="previewLatestBtn">开发预览</button>
+            </div>
+          </div>
+
+          <label for="query">分析请求</label>
+          <textarea
+            id="query"
+            name="query"
+            rows="8"
+            placeholder="例如：全面分析贵州茅台 600519.SH，重点关注长期估值、基本面质量、市场预期差、催化剂和主要风险。"
+            required
+          ></textarea>
+
+          <fieldset class="option-group">
+            <legend>模型档位</legend>
+            <div class="segmented">
+              <label class="segment">
+                <input type="radio" name="profile" value="cheap" checked />
+                <span>快速成本优先</span>
+              </label>
+              <label class="segment">
+                <input type="radio" name="profile" value="balanced" />
+                <span>关键环节增强</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="option-group">
+            <legend>信息采集深度</legend>
+            <div class="segmented three">
+              <label class="segment">
+                <input type="radio" name="collectionMode" value="fast" />
+                <span>Fast</span>
+              </label>
+              <label class="segment">
+                <input type="radio" name="collectionMode" value="standard" checked />
+                <span>Standard</span>
+              </label>
+              <label class="segment">
+                <input type="radio" name="collectionMode" value="deep" />
+                <span>Deep</span>
+              </label>
+            </div>
+          </fieldset>
+
+          <button class="primary" type="submit">
+            <span>生成估值报告</span>
+            <i></i>
+          </button>
+        </form>
+
+        <section class="panel output-panel">
+          <div class="panel-head">
+            <div>
+              <p class="kicker">Output</p>
+              <h2>分析结果</h2>
+            </div>
+            <span id="runState" class="state">待运行</span>
+          </div>
+
+          <div id="emptyState" class="empty">
+            <div class="orb"></div>
+            <p>报告会显示在这里。首次运行可能需要几分钟，取决于模型响应和信息采集深度。</p>
+          </div>
+
+          <div id="loadingState" class="loading hidden">
+            <div class="progress-head">
+              <span id="progressPercent">0/12</span>
+              <p id="loadingText">正在等待任务启动...</p>
+            </div>
+            <div class="progress-track">
+              <div id="progressBar" class="progress-bar"></div>
+            </div>
+            <section class="activity-panel">
+              <div class="activity-head">
+                <span>Live Workflow</span>
+                <strong>执行动态</strong>
+              </div>
+              <div id="activityStream" class="activity-stream"></div>
+            </section>
+            <ol id="progressList" class="workflow-steps"></ol>
+          </div>
+
+          <div id="resultState" class="result hidden">
+            <div class="summary-grid" id="summaryGrid"></div>
+            <article class="report">
+              <div class="report-head">
+                <h3>完整估值报告</h3>
+                <button class="ghost" type="button" id="copyBtn">复制</button>
+              </div>
+              <div id="reportText" class="report-content"></div>
+              <button class="expand-report" type="button" id="expandReportBtn" aria-label="展开报告">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8 6h10v10" />
+                  <path d="M18 6 6 18" />
+                </svg>
+              </button>
+            </article>
+          </div>
+
+          <div id="errorState" class="error hidden"></div>
+        </section>
+        </section>
+      </section>
+
+      <section class="page-view module-section position-page" id="position" data-page="position">
+        <div class="module-intro">
+          <p class="eyebrow">Position Sizing</p>
+          <h2>用凯利公式把交易判断转成仓位建议。</h2>
+          <p>
+            输入可用资金、主观胜率、当前价格、止盈和止损价格，系统会先计算该交易可承受的风险资金，再根据止损距离反推出建议投入金额。
+          </p>
+        </div>
+
+        <section class="position-workspace">
+          <form id="kellyForm" class="panel kelly-panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Risk Input</p>
+                <h2>交易参数</h2>
+              </div>
+              <button class="ghost" type="button" id="kellySampleBtn">示例</button>
+            </div>
+
+            <div class="field-grid">
+              <label for="availableCash">
+                可用资金
+                <input id="availableCash" name="available_cash" type="number" min="0" step="0.01" placeholder="100000" required />
+              </label>
+              <label for="winProbability">
+                主观胜率
+                <input id="winProbability" name="win_probability" type="number" min="0" max="100" step="0.1" placeholder="55" required />
+              </label>
+              <label for="currentPrice">
+                当前价格
+                <input id="currentPrice" name="current_price" type="number" min="0" step="0.001" placeholder="100" required />
+              </label>
+              <label for="takeProfitPrice">
+                止盈价格
+                <input id="takeProfitPrice" name="take_profit_price" type="number" min="0" step="0.001" placeholder="116" required />
+              </label>
+              <label for="stopLossPrice">
+                止损价格
+                <input id="stopLossPrice" name="stop_loss_price" type="number" min="0" step="0.001" placeholder="94" required />
+              </label>
+              <label for="kellyMultiplier">
+                凯利折扣
+                <input id="kellyMultiplier" name="kelly_multiplier" type="number" min="0" max="1" step="0.05" value="0.5" required />
+              </label>
+            </div>
+
+            <button class="primary" type="submit">
+              <span>计算推荐仓位</span>
+              <i></i>
+            </button>
+          </form>
+
+          <section class="panel kelly-result-panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Sizing Output</p>
+                <h2>仓位建议</h2>
+              </div>
+              <span id="kellyState" class="state">待计算</span>
+            </div>
+
+            <div id="kellyEmpty" class="kelly-empty">
+              <div class="risk-orb"></div>
+              <p>结果会显示建议投入金额、风险资金、最大亏损、盈亏比和凯利比例。</p>
+            </div>
+
+            <div id="kellyResult" class="kelly-result hidden">
+              <div class="allocation-card">
+                <span>推荐投入金额</span>
+                <strong id="recommendedAmount">--</strong>
+                <p id="kellyVerdict">等待计算</p>
+              </div>
+              <div class="kelly-metrics">
+                <div><span>风险资金</span><strong id="riskCapital">--</strong></div>
+                <div><span>最大亏损</span><strong id="maxLoss">--</strong></div>
+                <div><span>建议股数</span><strong id="positionUnits">--</strong></div>
+                <div><span>账户占用</span><strong id="exposurePct">--</strong></div>
+                <div><span>盈亏比</span><strong id="rewardRisk">--</strong></div>
+                <div><span>应用凯利</span><strong id="appliedKelly">--</strong></div>
+              </div>
+              <div class="risk-strip">
+                <div>
+                  <span>止损距离</span>
+                  <strong id="stopLossPct">--</strong>
+                </div>
+                <div>
+                  <span>止盈空间</span>
+                  <strong id="takeProfitPct">--</strong>
+                </div>
+                <div>
+                  <span>方向</span>
+                  <strong id="tradeDirection">--</strong>
+                </div>
+              </div>
+              <ul id="kellyNotes" class="kelly-notes"></ul>
+            </div>
+
+            <div id="kellyError" class="error hidden"></div>
+          </section>
+        </section>
+      </section>
+
+      <section class="page-view module-section events-page" id="events" data-page="events">
+        <div class="module-intro">
+          <p class="eyebrow">Event Focus</p>
+          <h2>把分散新闻和公告压缩成可行动的市场焦点。</h2>
+          <p>系统会按市场抓取候选信息，并调用 DeepSeek 进行重要性排序、摘要和观察点提炼。当前计划在早盘开盘前和午盘开盘前刷新。</p>
+        </div>
+
+        <section class="panel events-panel">
+          <div class="events-toolbar">
+            <div class="event-market-tabs" aria-label="事件聚焦市场切换">
+              <button class="event-tab active" type="button" data-market="a_share">A股</button>
+              <button class="event-tab" type="button" data-market="hk_share">港股</button>
+              <button class="event-tab" type="button" data-market="us_share">美股</button>
+            </div>
+            <div class="events-actions">
+              <span id="eventsState" class="state">待刷新</span>
+              <button class="ghost" type="button" id="refreshEventsBtn">立即刷新</button>
+            </div>
+          </div>
+
+          <div class="events-summary">
+            <div>
+              <p class="kicker">Market Pulse</p>
+              <h3 id="eventsSummaryTitle">选择市场后获取事件焦点</h3>
+            </div>
+            <p id="eventsMeta">刷新频率：早盘开盘前、午盘开盘前。</p>
+          </div>
+
+          <div id="eventsGrid" class="events-grid"></div>
+          <div id="eventsEmpty" class="event-empty">
+            <div class="risk-orb"></div>
+            <p>事件卡片会显示在这里。若未配置 DeepSeek API Key，会先显示原始候选新闻。</p>
+          </div>
+          <div id="eventsError" class="error hidden"></div>
+        </section>
+      </section>
+
+      <section class="page-view module-section placeholder-page" id="portfolio" data-page="portfolio">
+        <div class="module-intro">
+          <p class="eyebrow">Portfolio Decision</p>
+          <h2>组合决策会作为单独页面接入。</h2>
+          <p>后续可放入持仓、风险预算、组合归因、再平衡建议和交易记录，不与单笔仓位测算混在一起。</p>
+        </div>
+        <article class="panel placeholder-card">
+          <span>LATER</span>
+          <strong>组合仓位、风险暴露、再平衡和决策归档</strong>
+        </article>
+      </section>
+
+      <section class="page-view module-section placeholder-page" id="settings" data-page="settings">
+        <div class="module-intro">
+          <p class="eyebrow">System Settings</p>
+          <h2>系统设置会集中管理模型和数据源。</h2>
+          <p>这里后续用于配置模型档位、API 密钥、报告模板、风险偏好和开发调试开关。</p>
+        </div>
+        <article class="panel placeholder-card">
+          <span>SYSTEM</span>
+          <strong>模型、数据源、模板和用户偏好配置</strong>
+        </article>
+      </section>
+    </main>
+
+    <div class="report-modal hidden" id="reportModal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-backdrop" id="modalBackdrop"></div>
+      <section class="modal-panel">
+        <header class="modal-head">
+          <div>
+            <p class="kicker">Expanded Report</p>
+            <h2 id="modalTitle">完整估值报告</h2>
+          </div>
+          <div class="modal-actions">
+            <button class="ghost" type="button" id="modalCopyBtn">复制</button>
+            <button class="ghost close-modal" type="button" id="closeModalBtn">关闭</button>
+          </div>
+        </header>
+        <div id="modalReportContent" class="modal-report-content"></div>
+      </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
