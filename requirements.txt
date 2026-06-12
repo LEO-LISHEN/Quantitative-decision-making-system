@@ -10,3 +10,5 @@ pypdf
 pdfplumber
 tushare
 futu-api
+psycopg2-binary
+python-dotenv

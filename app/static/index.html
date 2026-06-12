@@ -4,7 +4,14 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Quantitative Decision System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/terminal-theme.css" />
   </head>
   <body>
     <header class="topbar">
@@ -13,15 +20,81 @@
         <span>QDS</span>
       </a>
       <nav class="nav" aria-label="主导航">
-        <a class="nav-link active" href="#analysis">AI 估值分析</a>
+        <a class="nav-link active" href="#dashboard">今日推荐</a>
+        <a class="nav-link muted" href="#analysis">个股分析</a>
         <a class="nav-link muted" href="#position">仓位测算</a>
+        <a class="nav-link muted" href="#portfolio">选股池</a>
         <a class="nav-link muted" href="#events">事件聚焦</a>
-        <a class="nav-link muted" href="#portfolio">组合决策</a>
-        <a class="nav-link muted" href="#settings">系统设置</a>
+        <a class="nav-link muted" href="#settings">AI 问答</a>
       </nav>
     </header>
 
     <main class="shell">
+      <section class="page-view active-page dashboard-page" id="dashboard" data-page="dashboard">
+        <section class="dashboard-hero">
+          <div>
+            <p class="eyebrow">AI Quant Research Assistant</p>
+            <h1>从全市场筛选，到理由、风险和持续跟踪。</h1>
+            <p class="lead">量化模型负责发现候选股票，AI 负责解释推荐逻辑。所有结果均展示数据日期和数据模式。</p>
+          </div>
+          <aside class="panel dashboard-status">
+            <span id="dashboardMode" class="state">加载中</span>
+            <strong id="dashboardDate">--</strong>
+            <p>策略版本：<span id="dashboardStrategy">--</span></p>
+          </aside>
+        </section>
+
+        <section class="dashboard-grid">
+          <section class="panel recommendation-panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Today&apos;s Picks</p>
+                <h2>今日推荐</h2>
+              </div>
+              <span id="recommendationState" class="state">读取中</span>
+            </div>
+            <div id="recommendationList" class="recommendation-list"></div>
+          </section>
+
+          <aside class="dashboard-side">
+            <section class="panel compact-panel">
+              <div class="panel-head">
+                <div><p class="kicker">Watchlist</p><h2>自选股</h2></div>
+              </div>
+              <div id="watchlistItems" class="watchlist-items"></div>
+            </section>
+            <section class="panel compact-panel">
+              <div class="panel-head">
+                <div><p class="kicker">Reports</p><h2>市场报告</h2></div>
+              </div>
+              <div id="dashboardReports" class="dashboard-reports"></div>
+            </section>
+          </aside>
+        </section>
+
+        <section id="recommendationDetail" class="panel recommendation-detail hidden">
+          <div class="detail-head">
+            <div>
+              <p id="detailSymbol" class="kicker"></p>
+              <h2 id="detailName">推荐详情</h2>
+              <p id="detailSummary" class="lead"></p>
+            </div>
+            <div class="detail-actions">
+              <button id="detailWatchBtn" class="ghost" type="button">加入自选</button>
+              <button id="detailNotifyBtn" class="primary compact-primary" type="button"><span>测试手机提醒</span></button>
+            </div>
+          </div>
+          <div id="detailMetrics" class="detail-metrics"></div>
+          <div class="detail-columns">
+            <article><h3>推荐理由</h3><ul id="detailReasons"></ul></article>
+            <article><h3>主要风险</h3><ul id="detailRisks"></ul></article>
+            <article><h3>判断失效条件</h3><ul id="detailInvalidations"></ul></article>
+          </div>
+          <div id="priceChart" class="price-chart" aria-label="价格趋势图"></div>
+          <p id="notificationResult" class="notification-result"></p>
+        </section>
+      </section>
+
       <section class="page-view" id="analysis" data-page="analysis">
         <section class="hero">
           <div class="hero-copy">
@@ -284,6 +357,13 @@
             <p id="eventsMeta">刷新频率：早盘开盘前、午盘开盘前。</p>
           </div>
 
+          <div id="eventsOverview" class="events-overview"></div>
+          <div class="event-filters" aria-label="事件筛选">
+            <button class="event-filter active" type="button" data-filter="all">全部</button>
+            <button class="event-filter" type="button" data-filter="high">高优先级</button>
+            <button class="event-filter" type="button" data-filter="bullish">利多</button>
+            <button class="event-filter" type="button" data-filter="bearish">利空</button>
+          </div>
           <div id="eventsGrid" class="events-grid"></div>
           <div id="eventsEmpty" class="event-empty">
             <div class="risk-orb"></div>
@@ -293,28 +373,106 @@
         </section>
       </section>
 
-      <section class="page-view module-section placeholder-page" id="portfolio" data-page="portfolio">
+      <section class="page-view module-section universe-page" id="portfolio" data-page="portfolio">
         <div class="module-intro">
-          <p class="eyebrow">Portfolio Decision</p>
-          <h2>组合决策会作为单独页面接入。</h2>
-          <p>后续可放入持仓、风险预算、组合归因、再平衡建议和交易记录，不与单笔仓位测算混在一起。</p>
+          <p class="eyebrow">Stock Universe</p>
+          <h2>查看 Top20，并持续跟踪你的自选股票。</h2>
+          <p>Top20 来自当前 Tushare 样本池的多因子排序。自选股支持按代码或名称添加，并展示趋势、收益、均线位置和模型评分。</p>
         </div>
-        <article class="panel placeholder-card">
-          <span>LATER</span>
-          <strong>组合仓位、风险暴露、再平衡和决策归档</strong>
-        </article>
+        <section class="universe-grid">
+          <article class="panel top20-panel">
+            <div class="panel-head">
+              <div><p class="kicker">Model Ranking</p><h2>Top20 选股榜</h2></div>
+              <span id="top20State" class="state">读取中</span>
+            </div>
+            <div id="top20List" class="top20-list"></div>
+          </article>
+          <aside class="panel watch-manager">
+            <div class="panel-head">
+              <div><p class="kicker">Custom Watchlist</p><h2>添加自选</h2></div>
+            </div>
+            <form id="watchSearchForm" class="watch-search-form">
+              <input id="watchSearchInput" type="search" placeholder="输入 600519.SH 或股票名称" autocomplete="off" required />
+              <button class="primary compact-primary" type="submit"><span>搜索</span></button>
+            </form>
+            <p class="watch-search-tip">当前可从已加载的 30 只 Demo 样本股中选择。</p>
+            <div id="watchSearchResults" class="watch-search-results"></div>
+          </aside>
+        </section>
+        <section class="panel tracked-panel">
+          <div class="panel-head">
+            <div><p class="kicker">Tracking</p><h2>自选追踪</h2></div>
+            <span id="trackedCount" class="state">0 只</span>
+          </div>
+          <div id="trackedStocks" class="tracked-stocks"></div>
+        </section>
+        <section id="trackingDetail" class="panel tracking-detail hidden">
+          <div class="detail-head">
+            <div>
+              <p id="trackingDetailSymbol" class="kicker"></p>
+              <h2 id="trackingDetailName">追踪详情</h2>
+              <p id="trackingDetailSummary" class="lead"></p>
+            </div>
+            <button id="trackingRemoveBtn" class="ghost" type="button">移出自选</button>
+          </div>
+          <div id="trackingMetrics" class="tracking-metrics"></div>
+          <div class="tracking-content">
+            <div id="trackingChart" class="price-chart"></div>
+            <article class="tracking-factors">
+              <h3>六因子评分</h3>
+              <div id="trackingFactors"></div>
+            </article>
+          </div>
+        </section>
       </section>
 
-      <section class="page-view module-section placeholder-page" id="settings" data-page="settings">
+      <section class="page-view module-section assistant-page" id="settings" data-page="settings">
         <div class="module-intro">
-          <p class="eyebrow">System Settings</p>
-          <h2>系统设置会集中管理模型和数据源。</h2>
-          <p>这里后续用于配置模型档位、API 密钥、报告模板、风险偏好和开发调试开关。</p>
+          <p class="eyebrow">AI Copilot</p>
+          <h2>围绕推荐股票和量化知识继续追问。</h2>
+          <p>问答会优先引用当前推荐快照和内置知识库。配置 DeepSeek 后使用真实模型，否则使用规则引擎保证 Demo 可演示。</p>
         </div>
-        <article class="panel placeholder-card">
-          <span>SYSTEM</span>
-          <strong>模型、数据源、模板和用户偏好配置</strong>
-        </article>
+        <section class="panel data-source-panel">
+          <div class="panel-head">
+            <div>
+              <p class="kicker">Market Data</p>
+              <h2>Tushare 数据源</h2>
+            </div>
+            <span id="dataSourceState" class="state">读取中</span>
+          </div>
+          <div class="data-source-layout">
+            <div class="data-source-form">
+              <p class="data-source-note">Token 仅由后端环境变量 <code>TUSHARE_TOKEN</code> 提供，前端不会接收、保存或回传密钥。</p>
+              <div class="data-source-actions">
+                <button id="testTushareBtn" class="ghost" type="button">测试连接</button>
+                <button id="refreshTushareBtn" class="primary compact-primary" type="button"><span>刷新推荐数据</span></button>
+              </div>
+            </div>
+            <div id="dataSourceMeta" class="data-source-meta"></div>
+          </div>
+          <p id="dataSourceMessage" class="notification-result"></p>
+        </section>
+        <section class="assistant-grid">
+          <article class="panel chat-panel">
+            <div class="panel-head">
+              <div><p class="kicker">Research Chat</p><h2>投资助手</h2></div>
+              <span id="chatMode" class="state">待提问</span>
+            </div>
+            <div id="chatMessages" class="chat-messages">
+              <div class="chat-message assistant">可以问我：贵州茅台为什么被推荐？600519.SH 有哪些风险？模型使用了哪些因子？</div>
+            </div>
+            <form id="chatForm" class="chat-form">
+              <input id="chatInput" name="message" type="text" placeholder="输入关于推荐、风险或量化方法的问题" required />
+              <button class="primary compact-primary" type="submit"><span>发送</span></button>
+            </form>
+          </article>
+          <aside class="panel system-panel">
+            <div class="panel-head">
+              <div><p class="kicker">Runtime</p><h2>系统状态</h2></div>
+            </div>
+            <div id="systemStatusCards" class="system-status-cards"></div>
+          </aside>
+        </section>
       </section>
     </main>
 

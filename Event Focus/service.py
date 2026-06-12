@@ -10,6 +10,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,19 +24,23 @@ MARKETS: dict[str, dict[str, Any]] = {
         "label": "A股",
         "timezone": CHINA_TZ,
         "refresh_times": ["09:15", "12:45"],
-        "queries": ["A股 公告 财经", "沪深 股市 重要公告", "中国 资本市场 政策 财经"],
+        "queries": [
+            "A股 重大公告 OR 业绩预告 OR 回购",
+            "证监会 央行 财政部 资本市场 政策",
+            "沪深 股市 产业政策 大宗商品 汇率",
+        ],
     },
     "hk_share": {
         "label": "港股",
         "timezone": CHINA_TZ,
         "refresh_times": ["09:15", "12:45"],
-        "queries": ["港股 公告 财经", "香港 股市 公司公告", "恒生 科技 股市 新闻"],
+        "queries": ["港股 重大公告 业绩", "香港 金管局 股市 政策", "恒生 科技 公司 新闻"],
     },
     "us_share": {
         "label": "美股",
         "timezone": EASTERN_TZ,
         "refresh_times": ["09:15", "12:45"],
-        "queries": ["US stocks earnings market news", "Nasdaq NYSE company news", "Federal Reserve stocks market"],
+        "queries": ["US stocks earnings guidance", "Nasdaq NYSE company material news", "Federal Reserve inflation stocks market"],
     },
 }
 
@@ -44,7 +49,7 @@ MARKETS: dict[str, dict[str, Any]] = {
 class EventFocusConfig:
     api_key: str = ""
     api_base: str = "https://api.deepseek.com/chat/completions"
-    model: str = "deepseek-v4-flash"
+    model: str = "deepseek-chat"
     timeout_seconds: int = 45
     max_source_items: int = 18
     max_cards: int = 6
@@ -117,6 +122,7 @@ class EventFocusService:
                 "next_refresh_hint": next_refresh_hint(market),
                 "source_count": len(items),
                 "cards": cards,
+                "overview": build_overview(cards),
                 "summary": str(data.get("summary") or f"{meta['label']}事件聚焦已更新。"),
                 "error": "",
             }
@@ -131,7 +137,7 @@ def load_config(root_dir: Path) -> EventFocusConfig:
     return EventFocusConfig(
         api_key=os.getenv("DEEPSEEK_API_KEY", ""),
         api_base=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/chat/completions"),
-        model=os.getenv("EVENT_FOCUS_MODEL", os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")),
+        model=os.getenv("EVENT_FOCUS_MODEL", os.getenv("DEMO_CHAT_MODEL", os.getenv("DEEPSEEK_MODEL", "deepseek-chat"))),
         timeout_seconds=int(os.getenv("EVENT_FOCUS_TIMEOUT_SECONDS", "45")),
         max_source_items=int(os.getenv("EVENT_FOCUS_MAX_SOURCE_ITEMS", "18")),
         max_cards=int(os.getenv("EVENT_FOCUS_MAX_CARDS", "6")),
@@ -158,14 +164,13 @@ def fetch_market_items(market: str, limit: int) -> list[dict[str, str]]:
     seen: set[str] = set()
     for url in urls:
         for item in fetch_rss_items(url):
-            key = item.get("link") or item.get("title") or ""
+            key = normalize_title(item.get("title", ""))
             if not key or key in seen:
                 continue
             seen.add(key)
             items.append(item)
-            if len(items) >= limit:
-                return items
-    return items
+    items.sort(key=lambda item: item.get("published_iso", ""), reverse=True)
+    return items[:limit]
 
 
 def configured_source_urls(market: str) -> list[str]:
@@ -215,6 +220,7 @@ def fetch_rss_items(url: str) -> list[dict[str, str]]:
                     "title": title,
                     "link": link,
                     "published_at": published_at,
+                    "published_iso": normalize_published_at(published_at),
                     "summary": description[:360],
                     "source": source or host_from_url(link),
                 }
@@ -239,12 +245,30 @@ def host_from_url(url: str) -> str:
         return ""
 
 
+def normalize_title(value: str) -> str:
+    value = re.sub(r"\s*[-–—]\s*[^-–—]{2,30}$", "", value)
+    return re.sub(r"[\W_]+", "", value).lower()
+
+
+def normalize_published_at(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        parsed = parsedate_to_datetime(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(CHINA_TZ).isoformat(timespec="minutes")
+    except (TypeError, ValueError, OverflowError):
+        return value
+
+
 def build_prompt(market_label: str, items: list[dict[str, str]], max_cards: int) -> str:
     compact_items = [
         {
             "title": item.get("title", ""),
             "source": item.get("source", ""),
             "published_at": item.get("published_at", ""),
+            "published_iso": item.get("published_iso", ""),
             "summary": item.get("summary", ""),
             "link": item.get("link", ""),
         }
@@ -253,10 +277,14 @@ def build_prompt(market_label: str, items: list[dict[str, str]], max_cards: int)
     return (
         f"市场：{market_label}\n"
         f"请从以下候选新闻/公告中选出最多 {max_cards} 条最值得交易员关注的信息。\n"
+        "优先选择影响范围广、信息新、来源明确、存在可验证后续节点的事件；合并重复事件，不得编造股票代码或事实。\n"
         "输出 JSON 格式："
         '{"summary":"一句话市场焦点","cards":[{"title":"短标题","market":"市场","priority":"高/中/低",'
         '"category":"公告/政策/业绩/资金/风险/宏观/产业","why_it_matters":"为什么重要，80字内",'
-        '"watch_points":["观察点1","观察点2"],"source":"来源","published_at":"时间","url":"链接"}]}\n'
+        '"impact_direction":"利多/利空/中性/分化","affected_assets":["行业、指数或股票代码"],'
+        '"horizon":"盘中/1-3日/1-4周/中长期","confidence":0.0,'
+        '"watch_points":["可验证观察点1","可验证观察点2"],"source":"来源",'
+        '"published_at":"优先使用published_iso","url":"链接"}]}\n'
         "候选信息：\n"
         f"{json.dumps(compact_items, ensure_ascii=False)}"
     )
@@ -268,7 +296,6 @@ def call_deepseek(config: EventFocusConfig, messages: list[dict[str, str]]) -> s
             "model": config.model,
             "messages": messages,
             "temperature": 0.2,
-            "thinking": {"type": "disabled"},
             "max_tokens": 2400,
             "response_format": {"type": "json_object"},
         },
@@ -309,6 +336,10 @@ def normalize_cards(cards: list[Any], max_cards: int) -> list[dict[str, Any]]:
                 "priority": str(raw.get("priority") or "中"),
                 "category": str(raw.get("category") or "事件"),
                 "why_it_matters": str(raw.get("why_it_matters") or ""),
+                "impact_direction": normalize_choice(raw.get("impact_direction"), {"利多", "利空", "中性", "分化"}, "中性"),
+                "affected_assets": [str(item) for item in raw.get("affected_assets", [])[:5]],
+                "horizon": normalize_choice(raw.get("horizon"), {"盘中", "1-3日", "1-4周", "中长期"}, "1-3日"),
+                "confidence": normalize_confidence(raw.get("confidence")),
                 "watch_points": [str(item) for item in raw.get("watch_points", [])[:3]],
                 "source": str(raw.get("source") or ""),
                 "published_at": str(raw.get("published_at") or ""),
@@ -316,6 +347,28 @@ def normalize_cards(cards: list[Any], max_cards: int) -> list[dict[str, Any]]:
             }
         )
     return normalized
+
+
+def normalize_choice(value: Any, allowed: set[str], default: str) -> str:
+    text = str(value or "").strip()
+    return text if text in allowed else default
+
+
+def normalize_confidence(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.5
+    return round(max(0.0, min(1.0, number)), 2)
+
+
+def build_overview(cards: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "high_priority_count": sum(card["priority"] == "高" for card in cards),
+        "bullish_count": sum(card["impact_direction"] == "利多" for card in cards),
+        "bearish_count": sum(card["impact_direction"] == "利空" for card in cards),
+        "categories": sorted({card["category"] for card in cards}),
+    }
 
 
 def fallback_payload(market: str, items: list[dict[str, str]], error: str) -> dict[str, Any]:
@@ -327,6 +380,10 @@ def fallback_payload(market: str, items: list[dict[str, str]], error: str) -> di
             "priority": "中",
             "category": "新闻",
             "why_it_matters": item.get("summary") or "DeepSeek 暂不可用，当前显示原始候选信息。",
+            "impact_direction": "中性",
+            "affected_assets": [],
+            "horizon": "1-3日",
+            "confidence": 0.35,
             "watch_points": ["等待模型完成重要性排序", "检查来源与发布时间"],
             "source": item.get("source", ""),
             "published_at": item.get("published_at", ""),
@@ -342,6 +399,7 @@ def fallback_payload(market: str, items: list[dict[str, str]], error: str) -> di
         "next_refresh_hint": next_refresh_hint(market),
         "source_count": len(items),
         "cards": cards,
+        "overview": build_overview(cards),
         "summary": f"{meta['label']}事件候选已更新，但模型筛选未完成。",
         "error": error,
     }

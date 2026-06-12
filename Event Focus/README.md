@@ -1,6 +1,20 @@
 # Event Focus
 
-Event Focus collects market news candidates and asks DeepSeek to turn them into concise event cards.
+Event Focus collects market news candidates and asks DeepSeek to turn them into concise decision cards.
+
+Each card includes:
+
+- priority and category
+- bullish, bearish, neutral, or divergent impact
+- affected industries, indices, or securities
+- expected impact horizon
+- confidence score
+- verifiable watch points
+- source, publication time, and source link
+
+The service normalizes publication times, removes duplicate headlines, sorts
+newer candidates first, caches each market independently, and falls back to raw
+source cards when DeepSeek is unavailable.
 
 Current markets:
 
@@ -14,7 +28,7 @@ Required environment variable:
 
 Optional environment variables:
 
-- `EVENT_FOCUS_MODEL`: defaults to `deepseek-v4-flash`
+- `EVENT_FOCUS_MODEL`: defaults to `deepseek-chat`
 - `EVENT_FOCUS_CACHE_SECONDS`: defaults to `1800`
 - `EVENT_FOCUS_MAX_CARDS`: defaults to `6`
 - `EVENT_FOCUS_A_SHARE_URLS`: comma-separated RSS URLs

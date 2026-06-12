@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import json
+import os
 import sys
 import threading
 import uuid
@@ -14,6 +15,27 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+load_dotenv(encoding="utf-8-sig")
+
+from app.demo_service import (
+    add_watchlist,
+    answer_demo_chat,
+    get_dashboard,
+    get_recommendation,
+    get_recommendations,
+    get_reports,
+    get_stock_bars,
+    get_stock_snapshot,
+    get_data_source_status,
+    get_watchlist,
+    remove_watchlist,
+    refresh_tushare_recommendations,
+    send_wecom_test,
+    search_stocks,
+    test_tushare_connection,
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -198,6 +220,10 @@ class EventCard(BaseModel):
     priority: str
     category: str
     why_it_matters: str
+    impact_direction: str = "中性"
+    affected_assets: list[str] = Field(default_factory=list)
+    horizon: str = "1-3日"
+    confidence: float = 0.5
     watch_points: list[str] = Field(default_factory=list)
     source: str = ""
     published_at: str = ""
@@ -212,8 +238,22 @@ class EventFocusResponse(BaseModel):
     next_refresh_hint: str
     source_count: int
     cards: list[EventCard]
+    overview: dict[str, Any] = Field(default_factory=dict)
     summary: str
     error: str = ""
+
+
+class WatchlistRequest(BaseModel):
+    symbol: str = Field(..., min_length=3, max_length=20)
+
+
+class NotificationTestRequest(BaseModel):
+    symbol: str = Field("600519.SH", min_length=3, max_length=20)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=2, max_length=1000)
+    symbol: str | None = Field(None, max_length=20)
 
 
 TASKS: dict[str, dict[str, Any]] = {}
@@ -224,7 +264,7 @@ EVENT_FOCUS = EventFocusService()
 app = FastAPI(
     title="Quantitative Decision System",
     description="AI-assisted equity research and valuation workflow.",
-    version="0.2.0",
+    version="0.3.0",
 )
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -245,6 +285,110 @@ def health() -> dict[str, Any]:
         "event_focus_loaded": EVENT_FOCUS_DIR.exists(),
         "event_focus_path": str(EVENT_FOCUS_DIR),
     }
+
+
+@app.get("/api/dashboard")
+def dashboard() -> dict[str, Any]:
+    return get_dashboard()
+
+
+@app.get("/api/recommendations/today")
+def recommendations_today(limit: int = 10) -> dict[str, Any]:
+    return get_recommendations(limit=max(1, min(limit, 30)))
+
+
+@app.get("/api/recommendations/{signal_id}")
+def recommendation_detail(signal_id: str) -> dict[str, Any]:
+    item = get_recommendation(signal_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Recommendation not found")
+    return item
+
+
+@app.get("/api/stocks/{symbol}/bars")
+def stock_bars(symbol: str, days: int = 90) -> dict[str, Any]:
+    return get_stock_bars(symbol.upper(), days=max(20, min(days, 250)))
+
+
+@app.get("/api/watchlist")
+def watchlist() -> list[dict[str, Any]]:
+    return get_watchlist()
+
+
+@app.post("/api/watchlist")
+def watchlist_add(payload: WatchlistRequest) -> list[dict[str, Any]]:
+    try:
+        return add_watchlist(payload.symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.delete("/api/watchlist/{symbol}")
+def watchlist_remove(symbol: str) -> list[dict[str, Any]]:
+    return remove_watchlist(symbol)
+
+
+@app.get("/api/stocks/search")
+def stocks_search(q: str, limit: int = 12) -> list[dict[str, Any]]:
+    return search_stocks(q, limit=max(1, min(limit, 30)))
+
+
+@app.get("/api/stocks/{symbol}")
+def stock_snapshot(symbol: str) -> dict[str, Any]:
+    item = get_stock_snapshot(symbol)
+    if not item:
+        raise HTTPException(status_code=404, detail="Stock not found in current universe")
+    return item
+
+
+@app.get("/api/reports")
+def reports() -> list[dict[str, Any]]:
+    return get_reports()
+
+
+@app.get("/api/system/status")
+def system_status() -> dict[str, Any]:
+    recommendations = get_recommendations(1)
+    return {
+        "status": "ready",
+        "data_mode": recommendations["data_mode"],
+        "as_of_date": recommendations["as_of_date"],
+        "strategy_version": recommendations["strategy_version"],
+        "ai_workflow": "loaded" if FINANCIAL_SKILLS_DIR.exists() else "missing",
+        "notification_channel": "wecom" if os.getenv("WECOM_WEBHOOK_URL") else "simulated",
+        "data_source": get_data_source_status(),
+    }
+
+
+@app.get("/api/data-source")
+def data_source_status() -> dict[str, Any]:
+    return get_data_source_status()
+
+
+@app.post("/api/data-source/test")
+def data_source_test() -> dict[str, Any]:
+    try:
+        return test_tushare_connection()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/data-source/refresh")
+def data_source_refresh() -> dict[str, Any]:
+    try:
+        return refresh_tushare_recommendations()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/api/demo/notifications/test")
+def notification_test(payload: NotificationTestRequest) -> dict[str, Any]:
+    return send_wecom_test(payload.symbol.upper())
+
+
+@app.post("/api/chat")
+def chat(payload: ChatRequest) -> dict[str, Any]:
+    return answer_demo_chat(payload.message, payload.symbol)
 
 
 def _now() -> str:
@@ -312,12 +456,13 @@ def _append_progress(task_id: str, message: str) -> None:
 
 
 def _analysis_response_from_result(result: dict[str, Any], saved_files: dict[str, str]) -> AnalysisResponse:
+    fallback_message = str(result.get("message") or result.get("reason") or "")
     return AnalysisResponse(
         status=str(result.get("status") or "unknown"),
         task_brief=result.get("task_brief"),
         lean_report=result.get("lean_report"),
-        text_report=str(result.get("text_report") or ""),
-        long_report=str(result.get("long_report") or ""),
+        text_report=str(result.get("text_report") or fallback_message),
+        long_report=str(result.get("long_report") or fallback_message),
         cost_summary=result.get("cost_summary"),
         saved_files=saved_files,
     )

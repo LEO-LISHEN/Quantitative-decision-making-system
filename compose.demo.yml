@@ -1,0 +1,59 @@
+name: ai-quant-demo
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-quant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quant_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-quant}
+      TZ: Asia/Shanghai
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - quant_demo_postgres:/var/lib/postgresql/data
+      - ../quant-db/sql/init/00_extensions.sql:/docker-entrypoint-initdb.d/00_extensions.sql:ro
+      - ../quant-db/sql/init/01_core_schema.sql:/docker-entrypoint-initdb.d/01_core_schema.sql:ro
+      - ../quant-db/sql/init/02_market_schema.sql:/docker-entrypoint-initdb.d/02_market_schema.sql:ro
+      - ../quant-db/sql/init/03_research_schema.sql:/docker-entrypoint-initdb.d/03_research_schema.sql:ro
+      - ../quant-db/sql/init/04_ops_schema.sql:/docker-entrypoint-initdb.d/04_ops_schema.sql:ro
+      - ../quant-db/sql/migrations/001_quantaalpha.sql:/docker-entrypoint-initdb.d/10_quantaalpha.sql:ro
+      - ../quant-db/sql/migrations/002_demo_app.sql:/docker-entrypoint-initdb.d/20_demo_app.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-quant} -d ${POSTGRES_DB:-quant}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-quant}
+      POSTGRES_USER: ${POSTGRES_USER:-quant}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-quant_dev_password}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_API_BASE: ${DEEPSEEK_API_BASE:-https://api.deepseek.com/chat/completions}
+      DEMO_CHAT_MODEL: ${DEMO_CHAT_MODEL:-deepseek-chat}
+      WECOM_WEBHOOK_URL: ${WECOM_WEBHOOK_URL:-}
+    ports:
+      - "8010:8010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  quant_demo_postgres:

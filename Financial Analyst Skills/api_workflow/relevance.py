@@ -4,6 +4,7 @@ import re
 
 
 FINANCE_KEYWORDS = {
+    "分析",
     "股票",
     "股价",
     "估值",
@@ -35,6 +36,10 @@ FINANCE_KEYWORDS = {
     "技术面",
     "催化剂",
 }
+
+COMPANY_NAME_PATTERNS = [
+    r"[\u4e00-\u9fff]{2,12}(科技|股份|集团|银行|证券|保险|能源|医药|电器|电子|汽车|材料|发展|控股)",
+]
 
 
 UNRELATED_KEYWORDS = {
@@ -68,10 +73,13 @@ def is_stock_analysis_related(user_input: str) -> bool:
         return False
 
     keyword_hit = any(keyword in text for keyword in FINANCE_KEYWORDS)
+    company_name_hit = any(re.search(pattern, text) for pattern in COMPANY_NAME_PATTERNS)
     ticker_hit = any(re.search(pattern, text) for pattern in TICKER_PATTERNS)
     unrelated_hit = any(keyword in text for keyword in UNRELATED_KEYWORDS)
 
-    if keyword_hit:
+    if unrelated_hit and not ticker_hit and not company_name_hit:
+        return False
+    if keyword_hit or company_name_hit:
         return True
     if ticker_hit and not unrelated_hit:
         return True
