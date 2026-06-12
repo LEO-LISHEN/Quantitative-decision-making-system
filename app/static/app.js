@@ -49,10 +49,63 @@ const eventsMeta = document.querySelector("#eventsMeta");
 const eventsGrid = document.querySelector("#eventsGrid");
 const eventsEmpty = document.querySelector("#eventsEmpty");
 const eventsError = document.querySelector("#eventsError");
+const eventsOverview = document.querySelector("#eventsOverview");
+const eventFilters = document.querySelectorAll(".event-filter");
+const dashboardMode = document.querySelector("#dashboardMode");
+const dashboardDate = document.querySelector("#dashboardDate");
+const dashboardStrategy = document.querySelector("#dashboardStrategy");
+const recommendationState = document.querySelector("#recommendationState");
+const recommendationList = document.querySelector("#recommendationList");
+const watchlistItems = document.querySelector("#watchlistItems");
+const dashboardReports = document.querySelector("#dashboardReports");
+const recommendationDetail = document.querySelector("#recommendationDetail");
+const detailSymbol = document.querySelector("#detailSymbol");
+const detailName = document.querySelector("#detailName");
+const detailSummary = document.querySelector("#detailSummary");
+const detailMetrics = document.querySelector("#detailMetrics");
+const detailReasons = document.querySelector("#detailReasons");
+const detailRisks = document.querySelector("#detailRisks");
+const detailInvalidations = document.querySelector("#detailInvalidations");
+const detailWatchBtn = document.querySelector("#detailWatchBtn");
+const detailNotifyBtn = document.querySelector("#detailNotifyBtn");
+const priceChart = document.querySelector("#priceChart");
+const notificationResult = document.querySelector("#notificationResult");
+const chatForm = document.querySelector("#chatForm");
+const chatInput = document.querySelector("#chatInput");
+const chatMessages = document.querySelector("#chatMessages");
+const chatMode = document.querySelector("#chatMode");
+const systemStatusCards = document.querySelector("#systemStatusCards");
+const testTushareBtn = document.querySelector("#testTushareBtn");
+const refreshTushareBtn = document.querySelector("#refreshTushareBtn");
+const dataSourceState = document.querySelector("#dataSourceState");
+const dataSourceMeta = document.querySelector("#dataSourceMeta");
+const dataSourceMessage = document.querySelector("#dataSourceMessage");
+const top20State = document.querySelector("#top20State");
+const top20List = document.querySelector("#top20List");
+const watchSearchForm = document.querySelector("#watchSearchForm");
+const watchSearchInput = document.querySelector("#watchSearchInput");
+const watchSearchResults = document.querySelector("#watchSearchResults");
+const trackedStocks = document.querySelector("#trackedStocks");
+const trackedCount = document.querySelector("#trackedCount");
+const trackingDetail = document.querySelector("#trackingDetail");
+const trackingDetailSymbol = document.querySelector("#trackingDetailSymbol");
+const trackingDetailName = document.querySelector("#trackingDetailName");
+const trackingDetailSummary = document.querySelector("#trackingDetailSummary");
+const trackingMetrics = document.querySelector("#trackingMetrics");
+const trackingChart = document.querySelector("#trackingChart");
+const trackingFactors = document.querySelector("#trackingFactors");
+const trackingRemoveBtn = document.querySelector("#trackingRemoveBtn");
 
 let pollingTimer = null;
 let currentReportPlainText = "";
 let currentEventMarket = "a_share";
+let currentEventFilter = "all";
+let currentEventPayload = null;
+let currentRecommendation = null;
+let dashboardLoaded = false;
+let portfolioLoaded = false;
+let currentTrackingSymbol = null;
+let currentTrackingInWatchlist = false;
 
 function selectedValue(name) {
   return document.querySelector(`input[name="${name}"]:checked`)?.value;
@@ -74,6 +127,11 @@ function formatNumber(value, digits = 2) {
 
 function formatPercent(value) {
   return `${formatNumber(Number(value || 0) * 100, 2)}%`;
+}
+
+function formatSignedPercent(value) {
+  const number = Number(value || 0);
+  return `${number > 0 ? "+" : ""}${formatNumber(number, 2)}%`;
 }
 
 function setView(view) {
@@ -351,11 +409,11 @@ function inlineMarkdown(value) {
 function renderResult(result) {
   renderSummary(result);
   const report = result.long_report || result.text_report || "";
-  currentReportPlainText = report || "报告为空。";
+  currentReportPlainText = report || "分析未生成报告，请补充明确的公司名称或股票代码后重试。";
   const renderedReport = renderMarkdown(currentReportPlainText);
   reportText.innerHTML = renderedReport;
   modalReportContent.innerHTML = renderedReport;
-  runState.textContent = "已完成";
+  runState.textContent = result.status === "refused" ? "需要补充信息" : "已完成";
   setView("result");
   form.querySelector(".primary").disabled = false;
 }
@@ -446,7 +504,7 @@ function collectKellyPayload() {
 
 function updateActiveNav() {
   const knownPages = new Set(Array.from(pageViews).map((page) => `#${page.id}`));
-  const hash = knownPages.has(window.location.hash) ? window.location.hash : "#analysis";
+  const hash = knownPages.has(window.location.hash) ? window.location.hash : "#dashboard";
 
   navLinks.forEach((link) => {
     const isActive = link.getAttribute("href") === hash;
@@ -465,6 +523,368 @@ function updateActiveNav() {
   if (hash === "#events" && !eventsGrid.dataset.loaded) {
     loadEventFocus(currentEventMarket).catch(handleEventError);
   }
+  if (hash === "#dashboard" && !dashboardLoaded) {
+    loadDashboard().catch(handleDashboardError);
+  }
+  if (hash === "#settings" && !systemStatusCards.dataset.loaded) {
+    loadSystemStatus().catch(() => {
+      systemStatusCards.innerHTML = `<p class="status-error">系统状态读取失败。</p>`;
+    });
+    loadDataSourceStatus().catch(handleDataSourceError);
+  }
+  if (hash === "#portfolio" && !portfolioLoaded) {
+    loadPortfolio().catch(handlePortfolioError);
+  }
+}
+
+function scoreLabel(key) {
+  return {
+    trend: "趋势",
+    momentum: "动量",
+    quality: "质量",
+    value: "估值",
+    liquidity: "流动性",
+    risk: "风险"
+  }[key] || key;
+}
+
+function renderRecommendations(items) {
+  recommendationList.innerHTML = items
+    .map((item) => `
+      <button class="recommendation-card" type="button" data-signal-id="${escapeHtml(item.signal_id)}">
+        <span class="recommendation-rank">${item.rank}</span>
+        <span class="recommendation-identity">
+          <strong>${escapeHtml(item.name)}</strong>
+          <small>${escapeHtml(item.symbol)} · ${escapeHtml(item.industry || "行业待补充")}</small>
+        </span>
+        <span class="recommendation-score">
+          <strong>${formatNumber(item.final_score, 1)}</strong>
+          <small>${escapeHtml(item.side)}</small>
+        </span>
+        <span class="recommendation-change ${Number(item.change_pct) >= 0 ? "positive" : "negative"}">${formatSignedPercent(item.change_pct)}</span>
+      </button>
+    `)
+    .join("");
+
+  recommendationList.querySelectorAll(".recommendation-card").forEach((button) => {
+    button.addEventListener("click", () => loadRecommendationDetail(button.dataset.signalId));
+  });
+}
+
+function renderWatchlist(items) {
+  if (!items.length) {
+    watchlistItems.innerHTML = `<p class="compact-empty">暂无自选股。</p>`;
+    return;
+  }
+  watchlistItems.innerHTML = items
+    .map((item) => `
+      <div class="watchlist-row">
+        <div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)}</small></div>
+        <button type="button" class="watchlist-remove" data-symbol="${escapeHtml(item.symbol)}">移除</button>
+      </div>
+    `)
+    .join("");
+  watchlistItems.querySelectorAll(".watchlist-remove").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const response = await fetch(`/api/watchlist/${encodeURIComponent(button.dataset.symbol)}`, { method: "DELETE" });
+      if (response.ok) renderWatchlist(await response.json());
+    });
+  });
+}
+
+function renderReports(items) {
+  dashboardReports.innerHTML = items
+    .map((item) => `
+      <article class="dashboard-report">
+        <span>${item.report_type === "pre_market" ? "盘前" : "盘后"}</span>
+        <strong>${escapeHtml(item.title)}</strong>
+        <p>${escapeHtml(item.summary)}</p>
+      </article>
+    `)
+    .join("");
+}
+
+function renderPriceChart(bars, container = priceChart) {
+  if (!bars.length) {
+    container.innerHTML = "<p>暂无价格数据。</p>";
+    return;
+  }
+  const width = 900;
+  const height = 250;
+  const padding = 22;
+  const closes = bars.map((bar) => Number(bar.close));
+  const min = Math.min(...closes);
+  const max = Math.max(...closes);
+  const range = max - min || 1;
+  const points = closes
+    .map((close, index) => {
+      const x = padding + (index / Math.max(1, closes.length - 1)) * (width - padding * 2);
+      const y = height - padding - ((close - min) / range) * (height - padding * 2);
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    })
+    .join(" ");
+  container.innerHTML = `
+    <div class="chart-head"><strong>近 ${bars.length} 个交易日趋势</strong><span>${bars[0].date} 至 ${bars.at(-1).date}</span></div>
+    <svg viewBox="0 0 ${width} ${height}" role="img" aria-label="收盘价趋势">
+      <defs><linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b86f3c" stop-opacity=".32"/><stop offset="1" stop-color="#b86f3c" stop-opacity="0"/></linearGradient></defs>
+      <polygon points="${padding},${height - padding} ${points} ${width - padding},${height - padding}" fill="url(#chartFill)"></polygon>
+      <polyline points="${points}" fill="none" stroke="#b86f3c" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"></polyline>
+    </svg>
+    <div class="chart-foot"><span>最低 ${formatNumber(min, 2)}</span><strong>最新 ${formatNumber(closes.at(-1), 2)}</strong><span>最高 ${formatNumber(max, 2)}</span></div>
+  `;
+}
+
+function renderTop20(items) {
+  top20List.innerHTML = items
+    .map((item) => `
+      <div class="top20-row" data-symbol="${escapeHtml(item.symbol)}">
+        <span class="top20-rank">${item.rank}</span>
+        <div class="top20-identity">
+          <strong>${escapeHtml(item.name)}</strong>
+          <small>${escapeHtml(item.symbol)} · ${escapeHtml(item.industry || "未分类")}</small>
+        </div>
+        <div class="top20-price">
+          <strong>${formatNumber(item.reference_price, 2)}</strong>
+          <small class="${Number(item.change_pct) >= 0 ? "positive" : "negative"}">${formatSignedPercent(item.change_pct)}</small>
+        </div>
+        <div class="top20-score"><strong>${formatNumber(item.final_score, 1)}</strong><small>综合分</small></div>
+        <div class="top20-actions">
+          <button class="ghost top20-detail" type="button">详情</button>
+          <button class="ghost top20-add" type="button">+ 自选</button>
+        </div>
+      </div>
+    `)
+    .join("");
+  top20List.querySelectorAll(".top20-detail").forEach((button) => {
+    button.addEventListener("click", () => loadTrackingDetail(button.closest(".top20-row").dataset.symbol));
+  });
+  top20List.querySelectorAll(".top20-add").forEach((button) => {
+    button.addEventListener("click", () => addTrackedSymbol(button.closest(".top20-row").dataset.symbol));
+  });
+}
+
+function renderTrackedStocks(items) {
+  trackedCount.textContent = `${items.length} 只`;
+  if (!items.length) {
+    trackedStocks.innerHTML = `<p class="compact-empty">暂无自选股，请从 Top20 或搜索结果中添加。</p>`;
+    return;
+  }
+  trackedStocks.innerHTML = items
+    .map((item) => {
+      const tracking = item.tracking || {};
+      return `
+        <article class="tracked-card" data-symbol="${escapeHtml(item.symbol)}">
+          <div class="tracked-card-head">
+            <div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)} · ${escapeHtml(item.industry || "未分类")}</small></div>
+            <span class="tracking-status">${escapeHtml(tracking.tracking_status || "等待数据")}</span>
+          </div>
+          <div class="tracked-quote">
+            <strong>${item.reference_price == null ? "--" : formatNumber(item.reference_price, 2)}</strong>
+            <span class="${Number(item.change_pct) >= 0 ? "positive" : "negative"}">${item.change_pct == null ? "--" : formatSignedPercent(item.change_pct)}</span>
+          </div>
+          <div class="tracked-mini-metrics">
+            <span>排名 <strong>${item.rank || "--"}</strong></span>
+            <span>评分 <strong>${item.final_score == null ? "--" : formatNumber(item.final_score, 1)}</strong></span>
+            <span>区间收益 <strong>${tracking.period_return_pct == null ? "--" : formatSignedPercent(tracking.period_return_pct)}</strong></span>
+            <span>MA20 偏离 <strong>${tracking.price_vs_ma20_pct == null ? "--" : formatSignedPercent(tracking.price_vs_ma20_pct)}</strong></span>
+          </div>
+          <div class="tracked-card-actions">
+            <button class="ghost tracked-detail" type="button">查看详情</button>
+            <button class="watchlist-remove tracked-remove" type="button">移除</button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+  trackedStocks.querySelectorAll(".tracked-detail").forEach((button) => {
+    button.addEventListener("click", () => loadTrackingDetail(button.closest(".tracked-card").dataset.symbol));
+  });
+  trackedStocks.querySelectorAll(".tracked-remove").forEach((button) => {
+    button.addEventListener("click", () => removeTrackedSymbol(button.closest(".tracked-card").dataset.symbol));
+  });
+}
+
+async function addTrackedSymbol(symbol) {
+  const response = await fetch("/api/watchlist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbol })
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || "添加自选失败");
+  renderTrackedStocks(data);
+  renderWatchlist(data);
+  await loadTrackingDetail(symbol);
+}
+
+async function removeTrackedSymbol(symbol) {
+  const response = await fetch(`/api/watchlist/${encodeURIComponent(symbol)}`, { method: "DELETE" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || "移除自选失败");
+  renderTrackedStocks(data);
+  renderWatchlist(data);
+  if (currentTrackingSymbol === symbol) {
+    currentTrackingSymbol = null;
+    trackingDetail.classList.add("hidden");
+  }
+}
+
+async function loadTrackingDetail(symbol) {
+  const [snapshotResponse, barsResponse] = await Promise.all([
+    fetch(`/api/stocks/${encodeURIComponent(symbol)}`),
+    fetch(`/api/stocks/${encodeURIComponent(symbol)}/bars?days=90`)
+  ]);
+  const item = await snapshotResponse.json();
+  if (!snapshotResponse.ok) throw new Error(item.detail || "股票详情读取失败");
+  const bars = await barsResponse.json();
+  currentTrackingSymbol = item.symbol;
+  currentTrackingInWatchlist = Boolean(item.in_watchlist);
+  const tracking = item.tracking || {};
+  trackingDetailSymbol.textContent = `${item.symbol} · ${item.industry || "未分类"} · ${item.as_of_date || ""}`;
+  trackingDetailName.textContent = `${item.name} · ${tracking.tracking_status || "追踪中"}`;
+  trackingDetailSummary.textContent = item.summary || "持续跟踪价格趋势、模型排名和因子变化。";
+  const metrics = [
+    ["当前价", item.reference_price == null ? "--" : formatNumber(item.reference_price, 2)],
+    ["当日涨跌", item.change_pct == null ? "--" : formatSignedPercent(item.change_pct)],
+    ["模型排名", item.rank || "--"],
+    ["综合评分", item.final_score == null ? "--" : formatNumber(item.final_score, 1)],
+    ["区间收益", tracking.period_return_pct == null ? "--" : formatSignedPercent(tracking.period_return_pct)],
+    ["MA20", tracking.ma20 == null ? "--" : formatNumber(tracking.ma20, 2)],
+    ["MA20 偏离", tracking.price_vs_ma20_pct == null ? "--" : formatSignedPercent(tracking.price_vs_ma20_pct)],
+    ["区间高 / 低", tracking.period_high == null ? "--" : `${formatNumber(tracking.period_high, 2)} / ${formatNumber(tracking.period_low, 2)}`]
+  ];
+  trackingMetrics.innerHTML = metrics
+    .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+    .join("");
+  trackingFactors.innerHTML = Object.entries(item.scores || {})
+    .map(([key, value]) => `<div class="tracking-factor"><span>${scoreLabel(key)}</span><strong>${formatNumber(value, 0)}</strong><i style="width:${Math.max(0, Math.min(100, Number(value)))}%"></i></div>`)
+    .join("");
+  if (barsResponse.ok) renderPriceChart(bars.bars || [], trackingChart);
+  trackingRemoveBtn.textContent = item.in_watchlist ? "移出自选" : "加入自选";
+  trackingDetail.classList.remove("hidden");
+  trackingDetail.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function loadPortfolio() {
+  top20State.textContent = "读取中";
+  const [rankingResponse, watchlistResponse] = await Promise.all([
+    fetch("/api/recommendations/today?limit=20"),
+    fetch("/api/watchlist")
+  ]);
+  const ranking = await rankingResponse.json();
+  if (!rankingResponse.ok) throw new Error(ranking.detail || "Top20 读取失败");
+  renderTop20(ranking.items || []);
+  top20State.textContent = `${ranking.items.length} 只 · ${ranking.as_of_date}`;
+  if (watchlistResponse.ok) renderTrackedStocks(await watchlistResponse.json());
+  portfolioLoaded = true;
+}
+
+function handlePortfolioError(error) {
+  top20State.textContent = "失败";
+  top20List.innerHTML = `<p class="status-error">${escapeHtml(error.message || "选股池读取失败")}</p>`;
+}
+
+async function loadRecommendationDetail(signalId) {
+  const response = await fetch(`/api/recommendations/${encodeURIComponent(signalId)}`);
+  const item = await response.json();
+  if (!response.ok) throw new Error(item.detail || "推荐详情读取失败");
+  currentRecommendation = item;
+  detailSymbol.textContent = `${item.symbol} · ${item.industry || "行业待补充"} · ${item.as_of_date}`;
+  detailName.textContent = `${item.name} · ${item.side}`;
+  detailSummary.textContent = item.summary;
+  detailMetrics.innerHTML = Object.entries(item.scores || {})
+    .map(([key, value]) => `<div><span>${scoreLabel(key)}</span><strong>${formatNumber(value, 0)}</strong><i style="width:${Math.max(0, Math.min(100, Number(value)))}%"></i></div>`)
+    .join("");
+  detailReasons.innerHTML = (item.positive_reasons || []).map((text) => `<li>${escapeHtml(text)}</li>`).join("");
+  detailRisks.innerHTML = (item.risk_reasons || []).map((text) => `<li>${escapeHtml(text)}</li>`).join("");
+  detailInvalidations.innerHTML = (item.invalidation_conditions || []).map((text) => `<li>${escapeHtml(text)}</li>`).join("");
+  notificationResult.textContent = "";
+  recommendationDetail.classList.remove("hidden");
+  const barsResponse = await fetch(`/api/stocks/${encodeURIComponent(item.symbol)}/bars?days=90`);
+  const bars = await barsResponse.json();
+  if (barsResponse.ok) renderPriceChart(bars.bars || []);
+  recommendationDetail.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function loadDashboard() {
+  recommendationState.textContent = "读取中";
+  const [dashboardResponse, watchlistResponse] = await Promise.all([
+    fetch("/api/dashboard"),
+    fetch("/api/watchlist")
+  ]);
+  const data = await dashboardResponse.json();
+  if (!dashboardResponse.ok) throw new Error(data.detail || "首页数据读取失败");
+  const recommendations = data.recommendations;
+  dashboardMode.textContent = recommendations.data_mode === "tushare_direct"
+    ? "Tushare 直连"
+    : recommendations.data_mode === "live"
+      ? "数据库结果"
+      : "Demo 快照";
+  dashboardDate.textContent = recommendations.as_of_date;
+  dashboardStrategy.textContent = recommendations.strategy_version;
+  recommendationState.textContent = `${recommendations.items.length} 只候选`;
+  renderRecommendations(recommendations.items || []);
+  renderReports(data.latest_reports || []);
+  if (watchlistResponse.ok) renderWatchlist(await watchlistResponse.json());
+  dashboardLoaded = true;
+}
+
+function handleDashboardError(error) {
+  recommendationState.textContent = "失败";
+  recommendationList.innerHTML = `<p class="status-error">${escapeHtml(error.message || "首页数据读取失败")}</p>`;
+}
+
+async function loadSystemStatus() {
+  const response = await fetch("/api/system/status");
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || "系统状态读取失败");
+  const cards = [
+    ["数据模式", data.data_mode],
+    ["数据日期", data.as_of_date],
+    ["策略版本", data.strategy_version],
+    ["AI 工作流", data.ai_workflow],
+    ["消息通道", data.notification_channel]
+  ];
+  systemStatusCards.innerHTML = cards
+    .map(([label, value]) => `<div><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`)
+    .join("");
+  systemStatusCards.dataset.loaded = "true";
+}
+
+function renderDataSourceStatus(data) {
+  dataSourceState.textContent = data.configured ? "已配置" : "未配置";
+  dataSourceMeta.innerHTML = `
+    <div><span>供应商</span><strong>Tushare Pro</strong></div>
+    <div><span>Token</span><strong>${data.configured ? escapeHtml(data.token_hint) : "未填写"}</strong></div>
+    <div><span>数据模式</span><strong>${escapeHtml(data.data_mode)}</strong></div>
+    <div><span>样本池</span><strong>${formatNumber(data.universe_size, 0)} 只</strong></div>
+    <div><span>数据日期</span><strong>${escapeHtml(data.as_of_date || "尚未刷新")}</strong></div>
+    <div><span>缓存股票</span><strong>${formatNumber(data.item_count, 0)} 只</strong></div>
+  `;
+  if (data.last_error) {
+    dataSourceMessage.textContent = `上次刷新失败：${data.last_error}`;
+  }
+}
+
+async function loadDataSourceStatus() {
+  const response = await fetch("/api/data-source");
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || "数据源状态读取失败");
+  renderDataSourceStatus(data);
+}
+
+function handleDataSourceError(error) {
+  dataSourceState.textContent = "失败";
+  dataSourceMessage.textContent = error.message || "数据源操作失败";
+}
+
+async function runDataSourceAction(url, pendingText) {
+  dataSourceState.textContent = pendingText;
+  dataSourceMessage.textContent = "";
+  const response = await fetch(url, { method: "POST" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.detail || "数据源操作失败");
+  return data;
 }
 
 function priorityClass(priority) {
@@ -473,7 +893,22 @@ function priorityClass(priority) {
   return "medium";
 }
 
+function eventDirectionClass(direction) {
+  if (direction === "利多") return "bullish";
+  if (direction === "利空") return "bearish";
+  if (direction === "分化") return "divergent";
+  return "neutral";
+}
+
+function filteredEventCards(cards) {
+  if (currentEventFilter === "high") return cards.filter((card) => card.priority === "高");
+  if (currentEventFilter === "bullish") return cards.filter((card) => card.impact_direction === "利多");
+  if (currentEventFilter === "bearish") return cards.filter((card) => card.impact_direction === "利空");
+  return cards;
+}
+
 function renderEventFocus(data) {
+  currentEventPayload = data;
   eventsGrid.dataset.loaded = "true";
   eventsState.textContent = data.status === "ready" ? "已更新" : "降级";
   eventsSummaryTitle.textContent = data.summary || `${data.market_label}事件聚焦`;
@@ -481,8 +916,20 @@ function renderEventFocus(data) {
   eventsError.classList.toggle("hidden", !data.error);
   eventsError.textContent = data.error ? `提示：${data.error}` : "";
   eventsEmpty.classList.toggle("hidden", Boolean(data.cards && data.cards.length));
+  const overview = data.overview || {};
+  eventsOverview.innerHTML = `
+    <div><span>高优先级</span><strong>${formatNumber(overview.high_priority_count || 0, 0)}</strong></div>
+    <div><span>利多事件</span><strong>${formatNumber(overview.bullish_count || 0, 0)}</strong></div>
+    <div><span>利空事件</span><strong>${formatNumber(overview.bearish_count || 0, 0)}</strong></div>
+    <div><span>覆盖类别</span><strong>${escapeHtml((overview.categories || []).join(" / ") || "待分类")}</strong></div>
+  `;
 
-  eventsGrid.innerHTML = (data.cards || [])
+  const cards = filteredEventCards(data.cards || []);
+  eventsEmpty.classList.toggle("hidden", Boolean(cards.length));
+  eventsEmpty.querySelector("p").textContent = cards.length
+    ? ""
+    : "当前筛选条件下暂无事件，请切换筛选或刷新数据。";
+  eventsGrid.innerHTML = cards
     .map((card) => {
       const watches = (card.watch_points || [])
         .map((item) => `<li>${escapeHtml(item)}</li>`)
@@ -490,14 +937,23 @@ function renderEventFocus(data) {
       const link = card.url
         ? `<a class="event-link" href="${escapeHtml(card.url)}" target="_blank" rel="noreferrer">查看来源</a>`
         : "";
+      const assets = (card.affected_assets || [])
+        .map((item) => `<span>${escapeHtml(item)}</span>`)
+        .join("");
       return `
-        <article class="event-card ${priorityClass(card.priority)}">
+        <article class="event-card ${priorityClass(card.priority)} ${eventDirectionClass(card.impact_direction)}">
           <div class="event-card-head">
             <span>${escapeHtml(card.category || "事件")}</span>
             <strong>${escapeHtml(card.priority || "中")}</strong>
           </div>
           <h3>${escapeHtml(card.title)}</h3>
           <p>${escapeHtml(card.why_it_matters || "等待模型补充重要性说明。")}</p>
+          <div class="event-impact-row">
+            <span class="impact-direction">${escapeHtml(card.impact_direction || "中性")}</span>
+            <span>${escapeHtml(card.horizon || "1-3日")}</span>
+            <span>置信度 ${formatNumber(Number(card.confidence || 0) * 100, 0)}%</span>
+          </div>
+          ${assets ? `<div class="event-assets">${assets}</div>` : ""}
           ${watches ? `<ul>${watches}</ul>` : ""}
           <footer>
             <span>${escapeHtml(card.source || card.market || "")} ${escapeHtml(card.published_at || "")}</span>
@@ -665,8 +1121,159 @@ eventTabs.forEach((tab) => {
   });
 });
 
+eventFilters.forEach((button) => {
+  button.addEventListener("click", () => {
+    currentEventFilter = button.dataset.filter || "all";
+    eventFilters.forEach((item) => item.classList.toggle("active", item === button));
+    if (currentEventPayload) renderEventFocus(currentEventPayload);
+  });
+});
+
 refreshEventsBtn.addEventListener("click", () => {
   loadEventFocus(currentEventMarket, true).catch(handleEventError);
+});
+
+detailWatchBtn.addEventListener("click", async () => {
+  if (!currentRecommendation) return;
+  const response = await fetch("/api/watchlist", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ symbol: currentRecommendation.symbol })
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    notificationResult.textContent = data.detail || "加入自选失败";
+    return;
+  }
+  renderWatchlist(data);
+  detailWatchBtn.textContent = "已加入自选";
+});
+
+detailNotifyBtn.addEventListener("click", async () => {
+  if (!currentRecommendation) return;
+  detailNotifyBtn.disabled = true;
+  notificationResult.textContent = "正在发送测试提醒...";
+  try {
+    const response = await fetch("/api/demo/notifications/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbol: currentRecommendation.symbol })
+    });
+    const data = await response.json();
+    notificationResult.textContent = data.status === "sent"
+      ? "企业微信提醒已发送。"
+      : data.status === "simulated"
+        ? `模拟提醒成功：${data.content}`
+        : `提醒发送失败：${data.error || "未知错误"}`;
+  } finally {
+    detailNotifyBtn.disabled = false;
+  }
+});
+
+chatForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const message = chatInput.value.trim();
+  if (!message) return;
+  chatMessages.insertAdjacentHTML("beforeend", `<div class="chat-message user">${escapeHtml(message)}</div>`);
+  chatInput.value = "";
+  chatMode.textContent = "思考中";
+  chatForm.querySelector("button").disabled = true;
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message, symbol: currentRecommendation?.symbol || null })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "问答请求失败");
+    const citations = (data.citations || [])
+      .map((item) => `<span>${escapeHtml(item.title)} · ${escapeHtml(item.source)}</span>`)
+      .join("");
+    chatMessages.insertAdjacentHTML(
+      "beforeend",
+      `<div class="chat-message assistant">${escapeHtml(data.answer)}${citations ? `<div class="chat-citations">${citations}</div>` : ""}</div>`
+    );
+    chatMode.textContent = data.mode === "deepseek" ? "DeepSeek" : "规则问答";
+  } catch (error) {
+    chatMessages.insertAdjacentHTML("beforeend", `<div class="chat-message assistant error-message">${escapeHtml(error.message)}</div>`);
+    chatMode.textContent = "失败";
+  } finally {
+    chatForm.querySelector("button").disabled = false;
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+});
+
+testTushareBtn.addEventListener("click", async () => {
+  try {
+    const data = await runDataSourceAction("/api/data-source/test", "测试中");
+    dataSourceMessage.textContent = data.message;
+    await loadDataSourceStatus();
+  } catch (error) {
+    handleDataSourceError(error);
+  }
+});
+
+refreshTushareBtn.addEventListener("click", async () => {
+  refreshTushareBtn.disabled = true;
+  try {
+    const data = await runDataSourceAction("/api/data-source/refresh", "抓取中");
+    renderDataSourceStatus(data);
+    dataSourceMessage.textContent = `刷新完成：${data.as_of_date}，生成 ${data.item_count} 只推荐候选。`;
+    dashboardLoaded = false;
+    portfolioLoaded = false;
+    await loadDashboard();
+  } catch (error) {
+    handleDataSourceError(error);
+  } finally {
+    refreshTushareBtn.disabled = false;
+  }
+});
+
+watchSearchForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const query = watchSearchInput.value.trim();
+  if (!query) return;
+  watchSearchResults.innerHTML = `<p class="compact-empty">搜索中...</p>`;
+  try {
+    const response = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`);
+    const items = await response.json();
+    if (!response.ok) throw new Error(items.detail || "搜索失败");
+    if (!items.length) {
+      watchSearchResults.innerHTML = `<p class="compact-empty">未找到匹配股票，请输入完整代码或名称。</p>`;
+      return;
+    }
+    watchSearchResults.innerHTML = items
+      .map((item) => `
+        <div class="watch-search-result" data-symbol="${escapeHtml(item.symbol)}">
+          <div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.symbol)} · ${escapeHtml(item.industry)}</small></div>
+          <div class="watch-search-quote"><strong>${formatNumber(item.reference_price, 2)}</strong><small class="${Number(item.change_pct) >= 0 ? "positive" : "negative"}">${formatSignedPercent(item.change_pct)}</small></div>
+          <button class="ghost search-detail" type="button">详情</button>
+          <button class="ghost search-add" type="button" ${item.in_watchlist ? "disabled" : ""}>${item.in_watchlist ? "已添加" : "+ 自选"}</button>
+        </div>
+      `)
+      .join("");
+    watchSearchResults.querySelectorAll(".search-detail").forEach((button) => {
+      button.addEventListener("click", () => loadTrackingDetail(button.closest(".watch-search-result").dataset.symbol));
+    });
+    watchSearchResults.querySelectorAll(".search-add:not(:disabled)").forEach((button) => {
+      button.addEventListener("click", async () => {
+        await addTrackedSymbol(button.closest(".watch-search-result").dataset.symbol);
+        button.textContent = "已添加";
+        button.disabled = true;
+      });
+    });
+  } catch (error) {
+    watchSearchResults.innerHTML = `<p class="status-error">${escapeHtml(error.message)}</p>`;
+  }
+});
+
+trackingRemoveBtn.addEventListener("click", async () => {
+  if (!currentTrackingSymbol) return;
+  if (currentTrackingInWatchlist) {
+    await removeTrackedSymbol(currentTrackingSymbol);
+  } else {
+    await addTrackedSymbol(currentTrackingSymbol);
+  }
 });
 
 window.setInterval(() => {
