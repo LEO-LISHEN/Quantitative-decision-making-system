@@ -167,6 +167,24 @@ h1 {
   line-height: 1.7;
 }
 
+#analysis .hero {
+  gap: 24px;
+  margin-bottom: 22px;
+}
+
+#analysis h1 {
+  max-width: 780px;
+  margin-bottom: 14px;
+  font-size: clamp(34px, 4vw, 54px);
+  line-height: 1.02;
+}
+
+#analysis .lead {
+  max-width: 760px;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
 .status-card,
 .panel {
   border: 1px solid var(--line);
@@ -1219,6 +1237,238 @@ button {
   line-height: 1.55;
 }
 
+.technical-page .module-intro {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+  max-width: 940px;
+  margin-bottom: 18px;
+}
+
+.technical-page .module-intro h2 {
+  max-width: 850px;
+  font-size: clamp(34px, 4vw, 56px);
+  line-height: 1.02;
+}
+
+.technical-page .module-intro p:last-child {
+  max-width: 820px;
+  font-size: 16px;
+  line-height: 1.65;
+}
+
+.technical-workspace {
+  display: grid;
+  grid-template-columns: 430px minmax(0, 1fr);
+  gap: 24px;
+  align-items: stretch;
+}
+
+.technical-input-panel,
+.technical-chat-panel {
+  min-height: 680px;
+}
+
+.technical-input-panel {
+  display: grid;
+  grid-template-rows: auto auto auto minmax(220px, 1fr) auto;
+  gap: 16px;
+}
+
+.technical-chat-panel {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.upload-box {
+  cursor: pointer;
+  display: grid;
+  gap: 14px;
+  min-height: 132px;
+  place-items: center;
+  padding: 22px;
+  border: 1px dashed rgba(40, 66, 56, 0.28);
+  border-radius: 28px;
+  background: rgba(255, 249, 236, 0.56);
+  text-align: center;
+}
+
+.upload-box input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.upload-box span {
+  color: var(--moss);
+  font-size: 20px;
+  font-weight: 950;
+}
+
+.upload-box span::after {
+  content: "Ctrl + V";
+  display: inline-grid;
+  place-items: center;
+  margin-left: 10px;
+  padding: 5px 8px;
+  border-radius: 999px;
+  color: #fffaf0;
+  background: var(--moss);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.upload-box strong {
+  max-width: 300px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.technical-preview-wrap {
+  display: flex;
+  width: 100%;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 4px 2px 2px;
+  scroll-snap-type: x proximity;
+}
+
+.technical-preview-card {
+  flex: 0 0 min(260px, 72%);
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(40, 66, 56, 0.16);
+  border-radius: 22px;
+  background: rgba(23, 32, 27, 0.04);
+  scroll-snap-align: start;
+}
+
+.technical-preview-card img {
+  display: block;
+  width: 100%;
+  height: 160px;
+  object-fit: contain;
+}
+
+.technical-remove-image {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 252, 244, 0.36);
+  border-radius: 999px;
+  color: #fffaf0;
+  background: rgba(23, 32, 27, 0.72);
+  font-size: 12px;
+  font-weight: 900;
+  backdrop-filter: blur(10px);
+}
+
+.technical-empty {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+  padding: 32px;
+  border: 1px dashed rgba(40, 66, 56, 0.2);
+  border-radius: 28px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.technical-empty p {
+  max-width: 460px;
+  margin: 18px 0 0;
+  line-height: 1.7;
+}
+
+.technical-chat {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  max-height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+}
+
+.technical-message {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.technical-message > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 999px;
+  color: #fffaf0;
+  background: var(--moss);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.technical-message.assistant > span {
+  background: var(--copper);
+}
+
+.technical-message > div {
+  padding: 15px 17px;
+  border: 1px solid rgba(40, 66, 56, 0.12);
+  border-radius: 22px;
+  background: rgba(255, 249, 236, 0.62);
+}
+
+.technical-message-image {
+  display: block;
+  width: min(360px, 100%);
+  max-height: 220px;
+  object-fit: contain;
+  margin-bottom: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(40, 66, 56, 0.14);
+  background: rgba(23, 32, 27, 0.04);
+}
+
+.technical-message-images {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.technical-message-text {
+  color: rgba(23, 32, 27, 0.82);
+  line-height: 1.75;
+}
+
+.technical-message-text h2,
+.technical-message-text h3,
+.technical-message-text h4 {
+  margin: 10px 0 6px;
+  color: var(--ink);
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.technical-message-text p {
+  margin: 0 0 10px;
+}
+
+.technical-message-text ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
 .placeholder-page {
   min-height: calc(100vh - 180px);
 }
@@ -1335,8 +1585,8 @@ button {
 
 .events-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .event-card {
@@ -1405,10 +1655,41 @@ button {
   letter-spacing: -0.04em;
 }
 
+.event-meta-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.event-meta-row em {
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: var(--moss);
+  background: rgba(40, 66, 56, 0.07);
+  font-style: normal;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .event-card p {
   margin: 0;
   color: rgba(23, 32, 27, 0.78);
   line-height: 1.65;
+}
+
+.event-assets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.event-assets span {
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: var(--copper);
+  background: rgba(184, 111, 60, 0.1);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .event-card ul {
@@ -1494,7 +1775,11 @@ button {
   .hero,
   .workspace,
   .position-workspace,
-  .module-intro,
+  .technical-workspace,
+  .module-intro {
+    grid-template-columns: 1fr;
+  }
+
   .events-grid {
     grid-template-columns: 1fr;
   }
@@ -1539,8 +1824,10 @@ button {
   }
 
   .kelly-panel,
-  .kelly-result-panel {
-    min-height: auto;
+  .kelly-result-panel,
+  .technical-chat-panel {
+    height: min(720px, calc(100vh - 120px));
+    min-height: 0;
   }
 }
 

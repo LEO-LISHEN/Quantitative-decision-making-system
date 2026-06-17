@@ -20,6 +20,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 FINANCIAL_SKILLS_DIR = ROOT_DIR / "Financial Analyst Skills"
 KELLY_POSITION_DIR = ROOT_DIR / "Kelly Position Sizing"
 EVENT_FOCUS_DIR = ROOT_DIR / "Event Focus"
+TECHNICAL_ANALYSIS_DIR = ROOT_DIR / "Technical Analysis"
 STATIC_DIR = ROOT_DIR / "app" / "static"
 REPORT_DIR = ROOT_DIR / "outputs" / "analysis_reports"
 
@@ -29,10 +30,13 @@ if str(KELLY_POSITION_DIR) not in sys.path:
     sys.path.insert(0, str(KELLY_POSITION_DIR))
 if str(EVENT_FOCUS_DIR) not in sys.path:
     sys.path.insert(0, str(EVENT_FOCUS_DIR))
+if str(TECHNICAL_ANALYSIS_DIR) not in sys.path:
+    sys.path.insert(0, str(TECHNICAL_ANALYSIS_DIR))
 
 from api_workflow import run_stock_analysis, save_analysis_bundle  # noqa: E402
 from calculator import KellyInput, calculate_position  # noqa: E402
 from service import EventFocusService  # noqa: E402
+from technical_service import TechnicalAnalysisService  # noqa: E402
 
 
 STEP_RE = re.compile(r"\[(\d+)\s*/\s*(\d+)\]")
@@ -197,11 +201,21 @@ class EventCard(BaseModel):
     market: str
     priority: str
     category: str
+    impact_path: str = ""
+    time_horizon: str = ""
+    affected_assets: list[str] = Field(default_factory=list)
+    market_impact: str = ""
     why_it_matters: str
     watch_points: list[str] = Field(default_factory=list)
     source: str = ""
     published_at: str = ""
     url: str = ""
+
+
+class EventGroup(BaseModel):
+    category: str
+    count: int
+    cards: list[EventCard]
 
 
 class EventFocusResponse(BaseModel):
@@ -212,13 +226,33 @@ class EventFocusResponse(BaseModel):
     next_refresh_hint: str
     source_count: int
     cards: list[EventCard]
+    groups: list[EventGroup] = Field(default_factory=list)
     summary: str
     error: str = ""
+
+
+class TechnicalChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=6000)
+
+
+class TechnicalAnalysisRequest(BaseModel):
+    message: str = Field(..., min_length=2, max_length=4000)
+    image_data_url: str | None = Field(default=None, max_length=8_000_000)
+    image_data_urls: list[str] = Field(default_factory=list, max_length=6)
+    history: list[TechnicalChatMessage] = Field(default_factory=list, max_length=12)
+
+
+class TechnicalAnalysisResponse(BaseModel):
+    status: str
+    model: str
+    analysis: str
 
 
 TASKS: dict[str, dict[str, Any]] = {}
 TASK_LOCK = threading.Lock()
 EVENT_FOCUS = EventFocusService()
+TECHNICAL_ANALYSIS = TechnicalAnalysisService()
 
 
 app = FastAPI(
@@ -244,6 +278,9 @@ def health() -> dict[str, Any]:
         "kelly_position_path": str(KELLY_POSITION_DIR),
         "event_focus_loaded": EVENT_FOCUS_DIR.exists(),
         "event_focus_path": str(EVENT_FOCUS_DIR),
+        "technical_analysis_loaded": TECHNICAL_ANALYSIS_DIR.exists(),
+        "technical_analysis_path": str(TECHNICAL_ANALYSIS_DIR),
+        "technical_analysis_openai_configured": TECHNICAL_ANALYSIS.is_configured(),
     }
 
 
@@ -436,6 +473,23 @@ def get_event_focus(market: str = "a_share", force: bool = False) -> EventFocusR
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return EventFocusResponse(**payload)
+
+
+@app.post("/api/technical/analyze", response_model=TechnicalAnalysisResponse)
+def analyze_technical_chart(payload: TechnicalAnalysisRequest) -> TechnicalAnalysisResponse:
+    try:
+        result = TECHNICAL_ANALYSIS.analyze(
+            message=payload.message,
+            image_data_url=payload.image_data_url,
+            image_data_urls=payload.image_data_urls,
+            history=[item.model_dump() for item in payload.history],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        status_code = 500 if "OPENAI_API_KEY" in str(exc) else 502
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    return TechnicalAnalysisResponse(**result)
 
 
 @app.get("/api/dev/latest-report", response_model=AnalysisResponse)

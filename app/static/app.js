@@ -49,10 +49,25 @@ const eventsMeta = document.querySelector("#eventsMeta");
 const eventsGrid = document.querySelector("#eventsGrid");
 const eventsEmpty = document.querySelector("#eventsEmpty");
 const eventsError = document.querySelector("#eventsError");
+const technicalForm = document.querySelector("#technicalForm");
+const technicalImage = document.querySelector("#technicalImage");
+const technicalImageName = document.querySelector("#technicalImageName");
+const technicalPreviewWrap = document.querySelector("#technicalPreviewWrap");
+const technicalQuestion = document.querySelector("#technicalQuestion");
+const clearTechnicalBtn = document.querySelector("#clearTechnicalBtn");
+const technicalState = document.querySelector("#technicalState");
+const technicalChatPanel = document.querySelector(".technical-chat-panel");
+const technicalEmpty = document.querySelector("#technicalEmpty");
+const technicalChat = document.querySelector("#technicalChat");
+const technicalError = document.querySelector("#technicalError");
+
+const TECHNICAL_IMAGE_HELP = "支持 Ctrl+V 粘贴多张截图，也可选择 PNG / JPG / WEBP 文件";
 
 let pollingTimer = null;
 let currentReportPlainText = "";
 let currentEventMarket = "a_share";
+let technicalImages = [];
+let technicalMessages = [];
 
 function selectedValue(name) {
   return document.querySelector(`input[name="${name}"]:checked`)?.value;
@@ -473,6 +488,39 @@ function priorityClass(priority) {
   return "medium";
 }
 
+function renderEventCard(card) {
+  const watches = (card.watch_points || [])
+    .map((item) => `<li>${escapeHtml(item)}</li>`)
+    .join("");
+  const assets = (card.affected_assets || [])
+    .map((item) => `<span>${escapeHtml(item)}</span>`)
+    .join("");
+  const link = card.url
+    ? `<a class="event-link" href="${escapeHtml(card.url)}" target="_blank" rel="noreferrer">查看来源</a>`
+    : "";
+
+  return `
+    <article class="event-card ${priorityClass(card.priority)}">
+      <div class="event-card-head">
+        <span>${escapeHtml(card.market_impact || card.category || "事件")}</span>
+        <strong>${escapeHtml(card.priority || "中")}</strong>
+      </div>
+      <h3>${escapeHtml(card.title)}</h3>
+      <div class="event-meta-row">
+        <em>${escapeHtml(card.impact_path || "其他")}</em>
+        <em>${escapeHtml(card.time_horizon || "短期")}</em>
+      </div>
+      <p>${escapeHtml(card.why_it_matters || "等待模型补充重要性说明。")}</p>
+      ${assets ? `<div class="event-assets">${assets}</div>` : ""}
+      ${watches ? `<ul>${watches}</ul>` : ""}
+      <footer>
+        <span>${escapeHtml(card.source || card.market || "")} ${escapeHtml(card.published_at || "")}</span>
+        ${link}
+      </footer>
+    </article>
+  `;
+}
+
 function renderEventFocus(data) {
   eventsGrid.dataset.loaded = "true";
   eventsState.textContent = data.status === "ready" ? "已更新" : "降级";
@@ -480,32 +528,11 @@ function renderEventFocus(data) {
   eventsMeta.textContent = `${data.market_label} · 来源 ${data.source_count || 0} 条 · ${data.generated_at || ""} · ${data.next_refresh_hint || ""}`;
   eventsError.classList.toggle("hidden", !data.error);
   eventsError.textContent = data.error ? `提示：${data.error}` : "";
-  eventsEmpty.classList.toggle("hidden", Boolean(data.cards && data.cards.length));
+  const cards = data.cards || [];
+  eventsEmpty.classList.toggle("hidden", Boolean(cards.length));
 
-  eventsGrid.innerHTML = (data.cards || [])
-    .map((card) => {
-      const watches = (card.watch_points || [])
-        .map((item) => `<li>${escapeHtml(item)}</li>`)
-        .join("");
-      const link = card.url
-        ? `<a class="event-link" href="${escapeHtml(card.url)}" target="_blank" rel="noreferrer">查看来源</a>`
-        : "";
-      return `
-        <article class="event-card ${priorityClass(card.priority)}">
-          <div class="event-card-head">
-            <span>${escapeHtml(card.category || "事件")}</span>
-            <strong>${escapeHtml(card.priority || "中")}</strong>
-          </div>
-          <h3>${escapeHtml(card.title)}</h3>
-          <p>${escapeHtml(card.why_it_matters || "等待模型补充重要性说明。")}</p>
-          ${watches ? `<ul>${watches}</ul>` : ""}
-          <footer>
-            <span>${escapeHtml(card.source || card.market || "")} ${escapeHtml(card.published_at || "")}</span>
-            ${link}
-          </footer>
-        </article>
-      `;
-    })
+  eventsGrid.innerHTML = cards
+    .map((card) => renderEventCard(card))
     .join("");
 }
 
@@ -529,6 +556,142 @@ function handleEventError(error) {
   eventsState.textContent = "失败";
   eventsError.textContent = error.message || "事件聚焦读取失败，请检查 DeepSeek API Key 和新闻源配置。";
   eventsError.classList.remove("hidden");
+}
+
+function setTechnicalView(view) {
+  technicalEmpty.classList.toggle("hidden", view !== "empty");
+  technicalChat.classList.toggle("hidden", view !== "chat");
+  technicalError.classList.toggle("hidden", view !== "error");
+  syncTechnicalPanelHeight();
+}
+
+function syncTechnicalPanelHeight() {
+  if (!technicalForm || !technicalChatPanel) return;
+  if (window.innerWidth <= 920) {
+    technicalChatPanel.style.height = "";
+    return;
+  }
+  technicalChatPanel.style.height = `${technicalForm.offsetHeight}px`;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("截图读取失败，请重新选择图片。"));
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderTechnicalChat() {
+  technicalChat.innerHTML = technicalMessages
+    .map((message) => {
+      const images = (message.images || [])
+        .map((image, index) => `<img class="technical-message-image" src="${escapeHtml(image)}" alt="用户上传的技术分析截图 ${index + 1}" />`)
+        .join("");
+      return `
+        <article class="technical-message ${message.role}">
+          <span>${message.role === "user" ? "你" : "AI"}</span>
+          <div>
+            ${images ? `<div class="technical-message-images">${images}</div>` : ""}
+            <div class="technical-message-text">${renderMarkdown(message.content)}</div>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+  syncTechnicalPanelHeight();
+  technicalChat.scrollTop = technicalChat.scrollHeight;
+}
+
+function resetTechnicalAnalysis() {
+  technicalImages = [];
+  technicalMessages = [];
+  technicalForm.reset();
+  technicalImageName.textContent = TECHNICAL_IMAGE_HELP;
+  renderTechnicalPreviews();
+  technicalError.textContent = "";
+  technicalState.textContent = "待分析";
+  setTechnicalView("empty");
+}
+
+function renderTechnicalPreviews() {
+  if (!technicalImages.length) {
+    technicalPreviewWrap.innerHTML = "";
+    technicalPreviewWrap.classList.add("hidden");
+    technicalImageName.textContent = TECHNICAL_IMAGE_HELP;
+    syncTechnicalPanelHeight();
+    return;
+  }
+  technicalPreviewWrap.classList.remove("hidden");
+  technicalImageName.textContent = `${technicalImages.length} 张截图已准备`;
+  technicalPreviewWrap.innerHTML = technicalImages
+    .map((image) => `
+      <article class="technical-preview-card">
+        <img src="${escapeHtml(image.dataUrl)}" alt="${escapeHtml(image.name)}" />
+        <button class="technical-remove-image" type="button" data-image-id="${escapeHtml(image.id)}" aria-label="删除截图">删除</button>
+      </article>
+    `)
+    .join("");
+  syncTechnicalPanelHeight();
+}
+
+async function addTechnicalImageFiles(files, sourceLabel = "图片") {
+  const selectedFiles = Array.from(files || []);
+  if (!selectedFiles.length) return;
+  if (technicalImages.length + selectedFiles.length > 6) {
+    throw new Error("一次最多支持 6 张截图。");
+  }
+  const nextImages = [];
+  for (const file of selectedFiles) {
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      technicalImage.value = "";
+      throw new Error("仅支持 PNG、JPG 或 WEBP 截图。");
+    }
+    if (file.size > 6 * 1024 * 1024) {
+      technicalImage.value = "";
+      throw new Error("单张截图大小不能超过 6MB。");
+    }
+    const dataUrl = await fileToDataUrl(file);
+    nextImages.push({
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      name: file.name || sourceLabel,
+      size: file.size,
+      dataUrl
+    });
+  }
+  technicalImages = [...technicalImages, ...nextImages];
+  renderTechnicalPreviews();
+  technicalError.textContent = "";
+  if (technicalMessages.length === 0) {
+    setTechnicalView("empty");
+  }
+}
+
+async function handleTechnicalImageChange() {
+  await addTechnicalImageFiles(technicalImage.files, "选择的截图");
+  technicalImage.value = "";
+}
+
+async function handleTechnicalPaste(event) {
+  const isTechnicalPage = window.location.hash === "#technical";
+  const technicalPage = document.querySelector("#technical");
+  const isInsideTechnicalModule = technicalPage?.contains(document.activeElement)
+    || document.activeElement === document.body;
+  if (!isTechnicalPage || !isInsideTechnicalModule) return;
+
+  const imageItems = Array.from(event.clipboardData?.items || [])
+    .filter((item) => item.type.startsWith("image/"));
+  if (!imageItems.length) return;
+
+  event.preventDefault();
+  const files = imageItems.map((item, index) => {
+    const file = item.getAsFile();
+    if (!file) return null;
+    return new File([file], file.name || `pasted-chart-${technicalImages.length + index + 1}.png`, { type: file.type });
+  }).filter(Boolean);
+  await addTechnicalImageFiles(files, "粘贴的截图");
+  technicalState.textContent = "截图已粘贴";
 }
 
 sampleBtn.addEventListener("click", () => {
@@ -656,6 +819,81 @@ kellyForm.addEventListener("submit", async (event) => {
     setKellyView("error");
   } finally {
     kellyForm.querySelector(".primary").disabled = false;
+  }
+});
+
+technicalImage.addEventListener("change", () => {
+  handleTechnicalImageChange().catch((error) => {
+    technicalState.textContent = "图片错误";
+    technicalError.textContent = error.message || "截图读取失败。";
+    setTechnicalView("error");
+  });
+});
+
+document.addEventListener("paste", (event) => {
+  handleTechnicalPaste(event).catch((error) => {
+    technicalState.textContent = "粘贴失败";
+    technicalError.textContent = error.message || "无法读取剪贴板中的截图。";
+    setTechnicalView("error");
+  });
+});
+
+technicalPreviewWrap.addEventListener("click", (event) => {
+  const button = event.target.closest(".technical-remove-image");
+  if (!button) return;
+  event.preventDefault();
+  event.stopPropagation();
+  technicalImages = technicalImages.filter((image) => image.id !== button.dataset.imageId);
+  renderTechnicalPreviews();
+});
+
+clearTechnicalBtn.addEventListener("click", resetTechnicalAnalysis);
+
+technicalForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const question = technicalQuestion.value.trim();
+  if (!question) return;
+
+  technicalState.textContent = "分析中";
+  technicalError.textContent = "";
+  technicalForm.querySelector(".primary").disabled = true;
+  setTechnicalView("chat");
+
+  const userMessage = {
+    role: "user",
+    content: question,
+    images: technicalImages.map((image) => image.dataUrl)
+  };
+  technicalMessages.push(userMessage);
+  renderTechnicalChat();
+
+  try {
+    const response = await fetch("/api/technical/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: question,
+        image_data_urls: technicalImages.map((image) => image.dataUrl),
+        history: technicalMessages
+          .slice(0, -1)
+          .map((message) => ({ role: message.role, content: message.content }))
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.detail || "技术分析请求失败");
+    }
+
+    technicalMessages.push({ role: "assistant", content: data.analysis || "模型未返回分析内容。" });
+    technicalQuestion.value = "";
+    technicalState.textContent = "已完成";
+    renderTechnicalChat();
+  } catch (error) {
+    technicalState.textContent = "失败";
+    technicalError.textContent = error.message || "技术分析失败，请检查 OPENAI_API_KEY 配置。";
+    setTechnicalView("error");
+  } finally {
+    technicalForm.querySelector(".primary").disabled = false;
   }
 });
 

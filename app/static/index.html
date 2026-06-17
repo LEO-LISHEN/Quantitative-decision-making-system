@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Quantitative Decision System</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260617-events-grouped" />
   </head>
   <body>
     <header class="topbar">
@@ -16,7 +16,7 @@
         <a class="nav-link active" href="#analysis">AI 估值分析</a>
         <a class="nav-link muted" href="#position">仓位测算</a>
         <a class="nav-link muted" href="#events">事件聚焦</a>
-        <a class="nav-link muted" href="#portfolio">组合决策</a>
+        <a class="nav-link muted" href="#technical">技术分析</a>
         <a class="nav-link muted" href="#settings">系统设置</a>
       </nav>
     </header>
@@ -293,16 +293,63 @@
         </section>
       </section>
 
-      <section class="page-view module-section placeholder-page" id="portfolio" data-page="portfolio">
+      <section class="page-view module-section technical-page" id="technical" data-page="technical">
         <div class="module-intro">
-          <p class="eyebrow">Portfolio Decision</p>
-          <h2>组合决策会作为单独页面接入。</h2>
-          <p>后续可放入持仓、风险预算、组合归因、再平衡建议和交易记录，不与单笔仓位测算混在一起。</p>
+          <p class="eyebrow">Technical Analysis</p>
+          <h2>上传盘面截图，用对话获得技术面判断。</h2>
+          <p>支持 K 线图、成交量、均线、MACD、RSI 等截图。系统会结合图面结构和你的问题，输出趋势判断、关键价位和情景推演。</p>
         </div>
-        <article class="panel placeholder-card">
-          <span>LATER</span>
-          <strong>组合仓位、风险暴露、再平衡和决策归档</strong>
-        </article>
+        <section class="technical-workspace">
+          <form id="technicalForm" class="panel technical-input-panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">Chart Input</p>
+                <h2>截图与问题</h2>
+              </div>
+              <button class="ghost" type="button" id="clearTechnicalBtn">清空</button>
+            </div>
+
+            <label class="upload-box" for="technicalImage">
+              <input id="technicalImage" name="technical_image" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+              <span>粘贴或上传 K 线截图</span>
+              <strong id="technicalImageName">支持 Ctrl+V 粘贴多张截图，也可选择 PNG / JPG / WEBP 文件</strong>
+              <div id="technicalPreviewWrap" class="technical-preview-wrap hidden"></div>
+            </label>
+
+            <label for="technicalQuestion">
+              分析问题
+              <textarea
+                id="technicalQuestion"
+                name="technical_question"
+                rows="6"
+                placeholder="例如：请结合这张日线图判断未来 1-2 周走势，重点看支撑、压力、量能和风险信号。"
+                required
+              ></textarea>
+            </label>
+
+            <button class="primary" type="submit">
+              <span>发送技术分析请求</span>
+              <i></i>
+            </button>
+          </form>
+
+          <section class="panel technical-chat-panel">
+            <div class="panel-head">
+              <div>
+                <p class="kicker">AI Technical View</p>
+                <h2>分析对话</h2>
+              </div>
+              <span id="technicalState" class="state">待分析</span>
+            </div>
+
+            <div id="technicalEmpty" class="technical-empty">
+              <div class="risk-orb"></div>
+              <p>上传盘面截图并输入问题后，AI 会在这里返回技术面观察、趋势判断、关键位和风险提示。</p>
+            </div>
+            <div id="technicalChat" class="technical-chat hidden"></div>
+            <div id="technicalError" class="error hidden"></div>
+          </section>
+        </section>
       </section>
 
       <section class="page-view module-section placeholder-page" id="settings" data-page="settings">
@@ -335,6 +382,6 @@
       </section>
     </div>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260617-events-grouped"></script>
   </body>
 </html>
