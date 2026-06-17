@@ -39,6 +39,22 @@ MARKETS: dict[str, dict[str, Any]] = {
     },
 }
 
+CATEGORY_ORDER = [
+    "政策监管",
+    "宏观流动性",
+    "产业趋势",
+    "公司公告",
+    "业绩预期",
+    "资金流向",
+    "市场情绪",
+    "估值重定价",
+    "供需变化",
+    "地缘与外部冲击",
+    "交易结构",
+    "风险暴露",
+    "其他事件",
+]
+
 
 @dataclass
 class EventFocusConfig:
@@ -109,6 +125,7 @@ class EventFocusService:
             cards = normalize_cards(data.get("cards", []), self.config.max_cards)
             if not cards:
                 return fallback_payload(market, items, "DeepSeek returned no cards.")
+            groups = group_cards(cards)
             return {
                 "market": market,
                 "market_label": meta["label"],
@@ -117,6 +134,7 @@ class EventFocusService:
                 "next_refresh_hint": next_refresh_hint(market),
                 "source_count": len(items),
                 "cards": cards,
+                "groups": groups,
                 "summary": str(data.get("summary") or f"{meta['label']}事件聚焦已更新。"),
                 "error": "",
             }
@@ -255,8 +273,11 @@ def build_prompt(market_label: str, items: list[dict[str, str]], max_cards: int)
         f"请从以下候选新闻/公告中选出最多 {max_cards} 条最值得交易员关注的信息。\n"
         "输出 JSON 格式："
         '{"summary":"一句话市场焦点","cards":[{"title":"短标题","market":"市场","priority":"高/中/低",'
-        '"category":"公告/政策/业绩/资金/风险/宏观/产业","why_it_matters":"为什么重要，80字内",'
+        '"category":"政策监管/宏观流动性/产业趋势/公司公告/业绩预期/资金流向/市场情绪/估值重定价/供需变化/地缘与外部冲击/交易结构/风险暴露/其他事件",'
+        '"impact_path":"盈利/估值/流动性/风险偏好/供需/监管/交易结构/其他","time_horizon":"短期/中期/长期",'
+        '"affected_assets":["行业/指数/个股"],"market_impact":"利多/利空/分化/待确认","why_it_matters":"为什么重要，80字内",'
         '"watch_points":["观察点1","观察点2"],"source":"来源","published_at":"时间","url":"链接"}]}\n'
+        "要求：尽量覆盖不同类别，不要把所有信息都塞进同一类别；同一类别可返回多条卡片。\n"
         "候选信息：\n"
         f"{json.dumps(compact_items, ensure_ascii=False)}"
     )
@@ -307,7 +328,11 @@ def normalize_cards(cards: list[Any], max_cards: int) -> list[dict[str, Any]]:
                 "title": str(raw.get("title") or "未命名事件"),
                 "market": str(raw.get("market") or ""),
                 "priority": str(raw.get("priority") or "中"),
-                "category": str(raw.get("category") or "事件"),
+                "category": normalize_category(str(raw.get("category") or "其他事件")),
+                "impact_path": str(raw.get("impact_path") or "其他"),
+                "time_horizon": str(raw.get("time_horizon") or "短期"),
+                "affected_assets": [str(item) for item in raw.get("affected_assets", [])[:4]],
+                "market_impact": str(raw.get("market_impact") or "待确认"),
                 "why_it_matters": str(raw.get("why_it_matters") or ""),
                 "watch_points": [str(item) for item in raw.get("watch_points", [])[:3]],
                 "source": str(raw.get("source") or ""),
@@ -325,7 +350,11 @@ def fallback_payload(market: str, items: list[dict[str, str]], error: str) -> di
             "title": item.get("title", "待筛选事件"),
             "market": meta["label"],
             "priority": "中",
-            "category": "新闻",
+            "category": "其他事件",
+            "impact_path": "其他",
+            "time_horizon": "短期",
+            "affected_assets": [meta["label"]],
+            "market_impact": "待确认",
             "why_it_matters": item.get("summary") or "DeepSeek 暂不可用，当前显示原始候选信息。",
             "watch_points": ["等待模型完成重要性排序", "检查来源与发布时间"],
             "source": item.get("source", ""),
@@ -342,9 +371,45 @@ def fallback_payload(market: str, items: list[dict[str, str]], error: str) -> di
         "next_refresh_hint": next_refresh_hint(market),
         "source_count": len(items),
         "cards": cards,
+        "groups": group_cards(cards),
         "summary": f"{meta['label']}事件候选已更新，但模型筛选未完成。",
         "error": error,
     }
+
+
+def normalize_category(value: str) -> str:
+    value = value.strip()
+    aliases = {
+        "公告": "公司公告",
+        "政策": "政策监管",
+        "宏观": "宏观流动性",
+        "业绩": "业绩预期",
+        "资金": "资金流向",
+        "风险": "风险暴露",
+        "产业": "产业趋势",
+        "情绪": "市场情绪",
+    }
+    normalized = aliases.get(value, value)
+    return normalized if normalized in CATEGORY_ORDER else "其他事件"
+
+
+def group_cards(cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for card in cards:
+        grouped.setdefault(card["category"], []).append(card)
+
+    groups: list[dict[str, Any]] = []
+    for category in CATEGORY_ORDER:
+        if category not in grouped:
+            continue
+        groups.append(
+            {
+                "category": category,
+                "count": len(grouped[category]),
+                "cards": grouped[category],
+            }
+        )
+    return groups
 
 
 def now_iso() -> str:
